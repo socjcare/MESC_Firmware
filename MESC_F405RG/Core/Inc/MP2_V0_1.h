@@ -14,19 +14,23 @@
 
 #define SHUNT_POLARITY -1.0f
 
-#define ABS_MAX_PHASE_CURRENT 400.0f //We set this as the board abs max, and the firmware sets the value actually used depending on the input setpoints with this as a maximum.
-#define ABS_MAX_BUS_VOLTAGE 90.0f
-#define ABS_MIN_BUS_VOLTAGE 38.0f
-#define R_SHUNT 0.00033f
-#define OPGAIN 10.5f
+#define ABS_MAX_PHASE_CURRENT 100.0f //We set this as the board abs max, and the firmware sets the value actually used depending on the input setpoints with this as a maximum.
+#define ABS_MAX_BUS_VOLTAGE 50.0f
+#define ABS_MIN_BUS_VOLTAGE 12.0f
+#define R_SHUNT 0.0005f
 
-#define R_VBUS_BOTTOM 3300.0f //Phase and Vbus voltage sensors
-#define R_VBUS_TOP 150000.0f //150V range for MP2 DFN
+#define OPGAIN 23.5f
 
-#define MAX_ID_REQUEST 2.0f
-#define MAX_IQ_REQUEST 10.0f
+//#define R_VBUS_BOTTOM 3300.0f //Phase and Vbus voltage sensors
+//#define R_VBUS_TOP 150000.0f //150V range for MP2 DFN
+#define R_VBUS_BOTTOM 7900.0f //Phase and Vbus voltage sensors
+#define R_VBUS_TOP 360000.0f //150V range for MP2 DFN
+
+#define MAX_ID_REQUEST 30.0f
+#define MAX_IQ_REQUEST 90.0f
 #define MIN_IQ_REQUEST -10
 #define DEFAULT_CONTROL_MODE MOTOR_CONTROL_MODE_TORQUE
+//#define DEFAULT_CONTROL_MODE MOTOR_CONTROL_MODE_SPEED
 #define ADC1OOR 4094
 
 
@@ -42,17 +46,20 @@
 //#define USE_FIELD_WEAKENING
 #define USE_FIELD_WEAKENINGV2
 
+
+
 //#define USE_LR_OBSERVER
 
 /////////////////////Related to ANGLE ESTIMATION////////////////////////////////////////
 #define INTERPOLATE_V7_ANGLE
 #define DEFAULT_SENSOR_MODE MOTOR_SENSOR_MODE_SENSORLESS
 //#define DEFAULT_SENSOR_MODE MOTOR_SENSOR_MODE_HALL
-//#define DEFAULT_SENSOR_MODE MOTOR_SENSOR_MODE_OPENLOOP
+#define DEFAULT_SENSOR_MODE MOTOR_SENSOR_MODE_OPENLOOP
 //#define DEFAULT_SENSOR_MODE MOTOR_SENSOR_MODE_ENCODER
 //#define DEFAULT_SENSOR_MODE MOTOR_SENSOR_MODE_HFI
 
-#define DEFAULT_STARTUP_SENSOR STARTUP_SENSOR_HFI //	STARTUP_SENSOR_OPENLOOP,STARTUP_SENSOR_HALL,STARTUP_SENSOR_PWM_ENCODER,
+//#define DEFAULT_STARTUP_SENSOR STARTUP_SENSOR_OPENLOOP  //	STARTUP_SENSOR_OPENLOOP,STARTUP_SENSOR_HALL,STARTUP_SENSOR_PWM_ENCODER,
+#define DEFAULT_STARTUP_SENSOR  STARTUP_SENSOR_HALL
 #define HFI_VOLTAGE 1.0f
 #define HFI_TEST_CURRENT 0.0f
 #define HFI_THRESHOLD 0.0f //Defaults to 0.05Vbus if set to 0
