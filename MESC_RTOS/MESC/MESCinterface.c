@@ -524,7 +524,8 @@ void populate_vars(){
 	TERM_addVar(mtr[0].FOC.speed_kp					, 0.0f		, 6000000.0f, "speed_kp"	, "amps/Hz proportional gain"																, VAR_ACCESS_RW	, callback	, &TERM_varList);
 	TERM_addVar(mtr[0].FOC.speed_ki					, 0.0f		, 6000000.0f, "speed_ki"	, "amps/Hz integral gain"																	, VAR_ACCESS_RW	, callback	, &TERM_varList);
 	TERM_addVar(mtr[0].FOC.speed_req				, 0.0f		, 5000.0f	, "speed_req"	, "Hz"																						, VAR_ACCESS_RW	, callback	, &TERM_varList);
-
+	TERM_addVar(mtr[0].FOC.Idq_req.q 		, -4096.0f 	, 4096.0f  	, "iqreq" 		, "mtr[0].FOC.Idq_req.q"     																, VAR_ACCESS_TR , NULL      , &TERM_varList);
+	TERM_addVar(mtr[0].FOC.Idq_smoothed.q 	, -HUGE_VAL , HUGE_VAL  , "iq"      	, "Phase Idq_q smoothed"                   													, VAR_ACCESS_TR , NULL      , &TERM_varList);
 
 
 
@@ -532,7 +533,7 @@ void populate_vars(){
 
 	TERM_addVarArrayFloat(mtr[0].m.hall_flux, sizeof(mtr[0].m.hall_flux),  -10.0f, 10.0f, "Hall_flux", "hall start table", VAR_ACCESS_RW, NULL, &TERM_varList);
 
-	#ifdef HAL_CAN_MODULE_ENABLED
+#ifdef HAL_CAN_MODULE_ENABLED
 	TERM_addVar(can1.node_id						, 1			, 254		, "node_id"	    , "Node ID"																					, VAR_ACCESS_RW	, callback	, &TERM_varList);
 	TERM_addVar(mtr[0].input_vars.remote_ADC_can_id	, 0			, 254		, "can_adc"	    , "CAN ADC ID  0=disabled"																	, VAR_ACCESS_RW	, callback	, &TERM_varList);
 #endif
@@ -547,8 +548,8 @@ void populate_vars(){
 	desc = TERM_addVar(mtr[0].FOC.Idq_smoothed.d 	, -HUGE_VAL , HUGE_VAL  , "id"      	, "Phase Idq_d smoothed"                   													, VAR_ACCESS_TR , NULL      , &TERM_varList);
 	TERM_setFlag(desc, FLAG_TELEMETRY_ON);
 
-	desc = TERM_addVar(mtr[0].FOC.Idq_smoothed.q 	, -HUGE_VAL , HUGE_VAL  , "iq"      	, "Phase Idq_q smoothed"                   													, VAR_ACCESS_TR , NULL      , &TERM_varList);
-	TERM_setFlag(desc, FLAG_TELEMETRY_ON);
+//	desc = TERM_addVar(mtr[0].FOC.Idq_smoothed.q 	, -HUGE_VAL , HUGE_VAL  , "iq"      	, "Phase Idq_q smoothed"                   													, VAR_ACCESS_TR , NULL      , &TERM_varList);
+//	TERM_setFlag(desc, FLAG_TELEMETRY_ON);
 
 	desc = TERM_addVar(mtr[0].Raw.ADC_in_ext1    	, 0			, 4096      , "adc1"   		, "Raw ADC throttle"                    													, VAR_ACCESS_TR , NULL      , &TERM_varList);
 	TERM_setFlag(desc, FLAG_TELEMETRY_ON);
@@ -568,8 +569,8 @@ void populate_vars(){
 	desc = TERM_addVar(mtr[0].FOC.Vdq.d     		, -4096.0f 	, 4096.0f  	, "Vd"    		, "FOC_Vdq_d"     																			, VAR_ACCESS_TR , NULL      , &TERM_varList);
 	TERM_setFlag(desc, FLAG_TELEMETRY_ON);
 
-	desc = TERM_addVar(mtr[0].FOC.Idq_req.q 		, -4096.0f 	, 4096.0f  	, "iqreq" 		, "mtr[0].FOC.Idq_req.q"     																, VAR_ACCESS_TR , NULL      , &TERM_varList);
-	TERM_setFlag(desc, FLAG_TELEMETRY_ON);
+//	desc = TERM_addVar(mtr[0].FOC.Idq_req.q 		, -4096.0f 	, 4096.0f  	, "iqreq" 		, "mtr[0].FOC.Idq_req.q"     																, VAR_ACCESS_TR , NULL      , &TERM_varList);
+//	TERM_setFlag(desc, FLAG_TELEMETRY_ON);
 
 }
 

@@ -53,7 +53,7 @@
 #define ADC2_POLARITY 1.0f
 
 #ifndef DEFAULT_INPUT
-#define DEFAULT_INPUT	0b0001 //0b...wxyz where w is UART, x is RCPWM, y is ADC2 z is ADC1
+#define DEFAULT_INPUT	0b1101 //0b...wxyz where w is UART, x is RCPWM, y is ADC2 z is ADC1
 #endif
 
 //Use the Ebike Profile tool

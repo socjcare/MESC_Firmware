@@ -26,7 +26,16 @@
 
 //////Motor parameters
 
-#if defined(MCMASTER_70KV_8080) //Reliable params
+#if defined(MULTISTAR) //Reliable params
+#define MAX_MOTOR_PHASE_CURRENT 30.0f
+#define DEFAULT_MOTOR_POWER 200.0f
+#define DEFAULT_FLUX_LINKAGE 0.0020f//Set this to the motor linkage in wB
+#define DEFAULT_MOTOR_Ld 0.000025f         //Henries
+#define DEFAULT_MOTOR_Lq 0.000025f//Henries
+#define DEFAULT_MOTOR_R 0.030f //Ohms
+#define DEFAULT_MOTOR_PP 11 //Pole Pairs
+
+#elif defined(MCMASTER_70KV_8080) //Reliable params
 #define MAX_MOTOR_PHASE_CURRENT 60.0f
 #define DEFAULT_MOTOR_POWER 500.0f
 #define DEFAULT_FLUX_LINKAGE 0.01180f//Set this to the motor linkage in wB
