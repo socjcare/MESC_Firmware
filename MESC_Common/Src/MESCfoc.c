@@ -1746,7 +1746,7 @@ void MESCTrack(MESC_motor_typedef *_motor) {
 	               | (UINT16_C(0x0) << 10) /* UPD=Buffer */
 	               | (UINT16_C(0x02) << 4) /* ADDR */
 	               | (len -1);            /* ND */
-      HAL_GPIO_WritePin(GPIOB, GPIO_PIN_8, GPIO_PIN_RESET);
+      HAL_GPIO_WritePin(GPIOC, GPIO_PIN_11, GPIO_PIN_RESET);
       HAL_SPI_Transmit( &hspi3, (uint8_t *)&reg,   1, 1000 );
       HAL_SPI_Receive(  &hspi3, (uint8_t *)&pkt, len, 1000 );
 //      volatile uint8_t crc = 0;
@@ -1777,13 +1777,13 @@ void MESCTrack(MESC_motor_typedef *_motor) {
 //    	  __NOP();
 //      }
 
-      pkt.angle = pkt.angle & 0x7fff;
+//      pkt.angle = pkt.angle & 0x7fff;
 #ifdef ENCODER_DIR_REVERSED
       	  _motor->FOC.enc_angle = -_motor->m.pole_pairs*((pkt.angle *2)%_motor->m.pole_angle)-_motor->FOC.enc_offset;
-#else
-      _motor->FOC.enc_angle = _motor->m.pole_pairs*((pkt.angle *2)%_motor->m.pole_angle)-_motor->FOC.enc_offset;
+//#else
+//      _motor->FOC.enc_angle = _motor->m.pole_pairs*((pkt.angle *2)%_motor->m.pole_angle)-_motor->FOC.enc_offset;
 #endif
-      HAL_GPIO_WritePin(GPIOB, GPIO_PIN_8, GPIO_PIN_SET);
+      HAL_GPIO_WritePin(GPIOC, GPIO_PIN_11, GPIO_PIN_SET);
       pkt.revolutions = pkt.revolutions&0b0000000111111111;
 #endif
   }
