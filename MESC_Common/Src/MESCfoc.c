@@ -99,6 +99,39 @@ static void clampBatteryPower(MESC_motor_typedef *_motor);
 static void ThrottleTemperature(MESC_motor_typedef *_motor);
 static void FWRampDown(MESC_motor_typedef *_motor);
 
+//Added SC
+static inline int32_t angle_error(int32_t a, int32_t b)
+{
+    int32_t e = a - b;
+    if (e >  32768) e -= 65536;
+    if (e < -32768) e += 65536;
+    return e;
+}
+
+
+static inline void encoder_pll_run(MESC_motor_typedef *m)
+{
+	encoder_pll_t *pll = &m->encoder_pll;
+
+    int32_t theta_meas = m->FOC.enc_angle;   // absolute encoder angle (0..65535)
+
+    /* Phase detector */
+    int32_t phase_err = angle_error(theta_meas, pll->theta_est);
+
+    /* PI controller */
+    pll->integrator += ENC_PLL_KI * phase_err;
+    pll->omega_est   = pll->integrator + ENC_PLL_KP * phase_err;
+
+    /* Integrate angle */
+    pll->theta_est += pll->omega_est;
+
+    /* Wrap */
+    pll->theta_est &= 0xFFFF;
+}
+
+
+
+
 void MESCfoc_Init(MESC_motor_typedef *_motor) {
 #ifdef STM32L4 // For some reason, ST have decided to have a different name for the L4 timer DBG freeze...
 	DBGMCU->APB2FZ |= DBGMCU_APB2FZ_DBG_TIM1_STOP;
@@ -560,15 +593,37 @@ void fastLoop(MESC_motor_typedef *_motor) {
 //				MESCFOC(_motor);
 //				break;
 
+//			case MOTOR_SENSOR_MODE_ABSOLUTE_ENCODER:
+//			{
+//			    tle5012(_motor);
+//
+//			    /* Absolute electrical angle */
+//			    _motor->FOC.enc_angle = _motor->pos.tle5012_pos * 2;
+//			    _motor->FOC.FOCAngle  = _motor->FOC.enc_angle;
+//
+//			    /* Optional: run observer for flux/state */
+//			    MESCfluxobs_run(_motor);
+//
+//			    MESCFOC(_motor);
+//			    break;
+//			}
+
+			//PLL version
 			case MOTOR_SENSOR_MODE_ABSOLUTE_ENCODER:
 			{
+			    /* Read absolute encoder */
 			    tle5012(_motor);
 
-			    /* Absolute electrical angle */
+			    /* 15-bit → 16-bit electrical angle */
 			    _motor->FOC.enc_angle = _motor->pos.tle5012_pos * 2;
-			    _motor->FOC.FOCAngle  = _motor->FOC.enc_angle;
 
-			    /* Optional: run observer for flux/state */
+			    /* Run encoder PLL */
+			    encoder_pll_run(_motor);
+
+			    /* Use PLL angle for FOC */
+			    _motor->FOC.FOCAngle = (uint16_t)_motor->encoder_pll.theta_est;
+
+			    /* Optional but recommended: run observer for flux */
 			    MESCfluxobs_run(_motor);
 
 			    MESCFOC(_motor);
@@ -2142,33 +2197,65 @@ void safeStart(MESC_motor_typedef *_motor){
 
 
 //Speed controller
+//void RunSpeedControl(MESC_motor_typedef *_motor){
+//	float speed_error;
+//	  if(_motor->MotorState == MOTOR_STATE_RUN){
+//
+//
+//
+//		speed_error = _motor->FOC.speed_kp*(_motor->FOC.speed_req - _motor->FOC.eHz);
+//		//Bound the proportional term before we do anything with it
+//		//We use the symetric terms here to allow fast PID ramps
+//		speed_error = clamp(speed_error, -_motor->input_vars.max_request_Idq.q, _motor->input_vars.max_request_Idq.q);
+//
+//		_motor->FOC.speed_error_int = _motor->FOC.speed_error_int + speed_error * _motor->FOC.speed_ki;
+//		//Bound the integral term...
+//		//Again, using symmetric terms
+//		_motor->FOC.speed_error_int = clamp(_motor->FOC.speed_error_int, -_motor->input_vars.max_request_Idq.q, _motor->input_vars.max_request_Idq.q);
+//
+//		//Apply the PID
+//		_motor->FOC.Idq_prereq.q = _motor->FOC.speed_error_int + speed_error;
+//		//Bound the overall...
+//		//Now we use asymmetric terms to stop it regenerating too much
+//		_motor->FOC.Idq_prereq.q = clamp(_motor->FOC.Idq_prereq.q, _motor->input_vars.min_request_Idq.q, _motor->input_vars.max_request_Idq.q);
+//
+//	  } else {
+//		  //Set zero
+//		  _motor->FOC.Idq_prereq.q = 0.0f;
+//		  _motor->FOC.speed_error_int = 0.0f;
+//	  }
+//}
+
+
 void RunSpeedControl(MESC_motor_typedef *_motor){
-	float speed_error;
-	  if(_motor->MotorState == MOTOR_STATE_RUN){
+    float speed_error;
 
+    if(_motor->MotorState == MOTOR_STATE_RUN){
+        // Measured speed from PLL
+        float measured_speed = _motor->encoder_pll.omega_est; // units: electrical per control step, scale as needed
 
+        // Speed PI
+        speed_error = _motor->FOC.speed_kp*(_motor->FOC.speed_req - measured_speed);
 
-		speed_error = _motor->FOC.speed_kp*(_motor->FOC.speed_req - _motor->FOC.eHz);
-		//Bound the proportional term before we do anything with it
-		//We use the symetric terms here to allow fast PID ramps
-		speed_error = clamp(speed_error, -_motor->input_vars.max_request_Idq.q, _motor->input_vars.max_request_Idq.q);
+        // Bound P-term
+        speed_error = clamp(speed_error, -_motor->input_vars.max_request_Idq.q, _motor->input_vars.max_request_Idq.q);
 
-		_motor->FOC.speed_error_int = _motor->FOC.speed_error_int + speed_error * _motor->FOC.speed_ki;
-		//Bound the integral term...
-		//Again, using symmetric terms
-		_motor->FOC.speed_error_int = clamp(_motor->FOC.speed_error_int, -_motor->input_vars.max_request_Idq.q, _motor->input_vars.max_request_Idq.q);
+        // Integrate I-term (with anti-windup)
+        _motor->FOC.speed_error_int += speed_error * _motor->FOC.speed_ki;
+        _motor->FOC.speed_error_int = clamp(_motor->FOC.speed_error_int, -_motor->input_vars.max_request_Idq.q, _motor->input_vars.max_request_Idq.q);
 
-		//Apply the PID
-		_motor->FOC.Idq_prereq.q = _motor->FOC.speed_error_int + speed_error;
-		//Bound the overall...
-		//Now we use asymmetric terms to stop it regenerating too much
-		_motor->FOC.Idq_prereq.q = clamp(_motor->FOC.Idq_prereq.q, _motor->input_vars.min_request_Idq.q, _motor->input_vars.max_request_Idq.q);
+        // Combine P + I
+        _motor->FOC.Idq_prereq.q = speed_error + _motor->FOC.speed_error_int;
 
-	  } else {
-		  //Set zero
-		  _motor->FOC.Idq_prereq.q = 0.0f;
-		  _motor->FOC.speed_error_int = 0.0f;
-	  }
+        // Bound final torque request
+        _motor->FOC.Idq_prereq.q = clamp(_motor->FOC.Idq_prereq.q,
+                                         _motor->input_vars.min_request_Idq.q,
+                                         _motor->input_vars.max_request_Idq.q);
+    } else {
+        // Stop
+        _motor->FOC.Idq_prereq.q = 0.0f;
+        _motor->FOC.speed_error_int = 0.0f;
+    }
 }
 
 void MESC_IC_Init(
