@@ -75,6 +75,11 @@ MESC_motor_typedef mtr[NUM_MOTORS];
 
 extern ADC_HandleTypeDef hadc1;
 
+//counter to slowdown reading of tle5012
+static uint16_t counter=0;
+
+//tle5012
+#define WRAP_THRESHOLD 32768 // Half the full scale
 
 //Debug
 #define DEMCR_TRCENA    0x01000000
@@ -83,6 +88,8 @@ extern ADC_HandleTypeDef hadc1;
 #define CYCCNTENA       (1<<0)
 #define DWT_CYCCNT      ((volatile uint32_t *)0xE0001004)
 #define CPU_CYCLES      *DWT_CYCCNT
+
+#define MIN_PWM_STEP 100
 
 static void SlowStartup(MESC_motor_typedef *_motor);
 static void calculatePower(MESC_motor_typedef *_motor);
@@ -245,8 +252,17 @@ void MESCfoc_Init(MESC_motor_typedef *_motor) {
 	_motor->FOC.enc_period_count = 1; //Avoid /0s
 
 	//ABI Incremental encoder
+#ifdef USE_SPI_ENCODER
+	//TLE5012 Incremental encoder
+	_motor->m.enc_counts = 32768;//Default to this, common for many motors. Avoid div0.
+	_motor->FOC.enc_ratio = 65536/_motor->m.enc_counts;
+
+#else
+
 	_motor->m.enc_counts = 4096;//Default to this, common for many motors. Avoid div0.
 	_motor->FOC.enc_ratio = 65536/_motor->m.enc_counts;
+
+#endif
 
 
 	_motor->hall.hall_error = 0;
@@ -309,12 +325,12 @@ void MESCfoc_Init(MESC_motor_typedef *_motor) {
 
     MESClrobs_Init(_motor);
 
-	mesc_init_1(_motor);
+
 
 	HAL_Delay(1000);  // Give the everything else time to start up (e.g. throttle,
 					// controller, PWM source...)
 
-	mesc_init_2(_motor);
+
 
 	hw_init(_motor);  // Populate the resistances, gains etc of the PCB - edit within
 			  // this function if compiling for other PCBs
@@ -355,7 +371,8 @@ while(_motor->MotorState == MOTOR_STATE_INITIALISING){
 #endif
 
 #ifdef USE_SPI_ENCODER
-  _motor->FOC.enc_offset = ENCODER_E_OFFSET;
+//  _motor->FOC.enc_offset = ENCODER_E_OFFSET;
+  _motor->FOC.enc_offset = 28432;
 #endif
 	//  __HAL_TIM_ENABLE_IT(_motor->stimer, TIM_IT_UPDATE);
 
@@ -430,6 +447,8 @@ void MESC_ADC_IRQ_handler(MESC_motor_typedef *_motor){
 // since the currents require approximately 1us = 144 clock cycles (f405) and 72
 // clock cycles (f303) to convert.
 int16_t diff;
+
+
 void fastLoop(MESC_motor_typedef *_motor) {
 	uint32_t cycles = CPU_CYCLES;
   // Call this directly from the TIM top IRQ
@@ -446,29 +465,80 @@ void fastLoop(MESC_motor_typedef *_motor) {
 
     case MOTOR_STATE_RUN:
     	switch(_motor->MotorSensorMode){
-			case MOTOR_SENSOR_MODE_SENSORLESS:
-				if(_motor->options.use_hall_start){
-					if(_motor->FOC.hall_start_now){
-						_motor->FOC.flux_a = (1.0f-_motor->FOC.hall_IIR)*_motor->FOC.flux_a + _motor->FOC.hall_IIR*_motor->m.hall_flux[_motor->hall.current_hall_state-1][0];
-						_motor->FOC.flux_b = (1.0f-_motor->FOC.hall_IIR)*_motor->FOC.flux_b + _motor->FOC.hall_IIR*_motor->m.hall_flux[_motor->hall.current_hall_state-1][1];
-//						if(fabsf(_motor->FOC.Vdq.q-_motor->m.R*_motor->FOC.Idq_smoothed.q)>HALL_VOLTAGE_THRESHOLD){
-							MESCfluxobs_run(_motor); //For some reason, this does not seem to work well at stationary;
-							//it results in vibrations at standstill, although it smooths the transition. Therefore, start it a bit later.
-//						}else{
-							_motor->FOC.FOCAngle = (uint16_t)(32768.0f + 10430.0f * fast_atan2(_motor->FOC.flux_b, _motor->FOC.flux_a)) - 32768;
-//						}
-					}else if(_motor->FOC.enc_start_now){
-						_motor->FOC.flux_a = 0.95f*_motor->FOC.flux_a + _motor->FOC.enccos * 0.05f * _motor->m.flux_linkage;
-						_motor->FOC.flux_b = 0.95f*_motor->FOC.flux_b + _motor->FOC.encsin * 0.05f * _motor->m.flux_linkage;
-						MESCfluxobs_run(_motor);
-					}else{
-						MESCfluxobs_run(_motor);
-					}
-				}else{
-					MESCfluxobs_run(_motor);
-				}
-				MESCFOC(_motor);
-				break;
+//			case MOTOR_SENSOR_MODE_SENSORLESS:
+//				if(_motor->options.use_hall_start){
+//					if(_motor->FOC.hall_start_now){
+//						_motor->FOC.flux_a = (1.0f-_motor->FOC.hall_IIR)*_motor->FOC.flux_a + _motor->FOC.hall_IIR*_motor->m.hall_flux[_motor->hall.current_hall_state-1][0];
+//						_motor->FOC.flux_b = (1.0f-_motor->FOC.hall_IIR)*_motor->FOC.flux_b + _motor->FOC.hall_IIR*_motor->m.hall_flux[_motor->hall.current_hall_state-1][1];
+////						if(fabsf(_motor->FOC.Vdq.q-_motor->m.R*_motor->FOC.Idq_smoothed.q)>HALL_VOLTAGE_THRESHOLD){
+//							MESCfluxobs_run(_motor); //For some reason, this does not seem to work well at stationary;
+//							//it results in vibrations at standstill, although it smooths the transition. Therefore, start it a bit later.
+////						}else{
+//							_motor->FOC.FOCAngle = (uint16_t)(32768.0f + 10430.0f * fast_atan2(_motor->FOC.flux_b, _motor->FOC.flux_a)) - 32768;
+////						}
+//					}else if(_motor->FOC.enc_start_now){
+//						_motor->FOC.flux_a = 0.95f*_motor->FOC.flux_a + _motor->FOC.enccos * 0.05f * _motor->m.flux_linkage;
+//						_motor->FOC.flux_b = 0.95f*_motor->FOC.flux_b + _motor->FOC.encsin * 0.05f * _motor->m.flux_linkage;
+//						MESCfluxobs_run(_motor);
+//					}else{
+//						MESCfluxobs_run(_motor);
+//					}
+//				}else{
+//					MESCfluxobs_run(_motor);
+//				}
+//				MESCFOC(_motor);
+//				break;
+
+    	case MOTOR_SENSOR_MODE_SENSORLESS:
+    	{
+    	    bool run_flux_obs = true;
+
+    	    if (_motor->options.use_hall_start) {
+
+    	        if (_motor->FOC.hall_start_now) {
+    	            const uint8_t hall_idx = _motor->hall.current_hall_state - 1;
+
+    	            /* IIR blend toward hall-based flux */
+    	            _motor->FOC.flux_a =
+    	                (1.0f - _motor->FOC.hall_IIR) * _motor->FOC.flux_a +
+    	                _motor->FOC.hall_IIR * _motor->m.hall_flux[hall_idx][0];
+
+    	            _motor->FOC.flux_b =
+    	                (1.0f - _motor->FOC.hall_IIR) * _motor->FOC.flux_b +
+    	                _motor->FOC.hall_IIR * _motor->m.hall_flux[hall_idx][1];
+
+    	            /* Run observer (even though it is weak at standstill) */
+    	            MESCfluxobs_run(_motor);
+
+    	            /* Electrical angle from blended flux */
+    	            _motor->FOC.FOCAngle =
+    	                (uint16_t)(32768.0f +
+    	                           10430.0f * fast_atan2(_motor->FOC.flux_b,
+    	                                                 _motor->FOC.flux_a)) - 32768;
+
+    	            run_flux_obs = false;
+    	        }
+    	        else if (_motor->FOC.enc_start_now) {
+
+    	            /* Seed flux from encoder angle */
+    	            _motor->FOC.flux_a =
+    	                0.95f * _motor->FOC.flux_a +
+    	                0.05f * _motor->FOC.enccos * _motor->m.flux_linkage;
+
+    	            _motor->FOC.flux_b =
+    	                0.95f * _motor->FOC.flux_b +
+    	                0.05f * _motor->FOC.encsin * _motor->m.flux_linkage;
+    	        }
+    	    }
+
+    	    if (run_flux_obs) {
+    	        MESCfluxobs_run(_motor);
+    	    }
+
+    	    MESCFOC(_motor);
+    	    break;
+    	}
+
 			case MOTOR_SENSOR_MODE_HALL:
 				_motor->HFI.inject = 0;
 				hallAngleEstimator();
@@ -480,11 +550,31 @@ void fastLoop(MESC_motor_typedef *_motor) {
 				OLGenerateAngle(_motor);
 				MESCFOC(_motor);
 				break;
+//			case MOTOR_SENSOR_MODE_ABSOLUTE_ENCODER:
+//				_motor->FOC.enc_period_count++;
+//				tle5012(_motor);
+//				//tle5012 angle is 15-bit resoltuion  so multiply by 2 to give 0-65535 range
+//				_motor->FOC.enc_angle =  _motor->pos.tle5012_pos*2;
+//				_motor->FOC.FOCAngle = _motor->FOC.enc_angle + (uint16_t)((float)(_motor->FOC.enc_period_count) * (float)_motor->FOC.enc_pwm_step);
+//				//_motor->FOC.FOCAngle = _motor->FOC.enc_angle + _motor->FOC.enc_pwm_step;
+//				MESCFOC(_motor);
+//				break;
+
 			case MOTOR_SENSOR_MODE_ABSOLUTE_ENCODER:
-				_motor->FOC.enc_period_count++;
-				_motor->FOC.FOCAngle = _motor->FOC.enc_angle + (uint16_t)((float)(_motor->FOC.enc_period_count) * (float)_motor->FOC.enc_pwm_step);
-				MESCFOC(_motor);
-				break;
+			{
+			    tle5012(_motor);
+
+			    /* Absolute electrical angle */
+			    _motor->FOC.enc_angle = _motor->pos.tle5012_pos * 2;
+			    _motor->FOC.FOCAngle  = _motor->FOC.enc_angle;
+
+			    /* Optional: run observer for flux/state */
+			    MESCfluxobs_run(_motor);
+
+			    MESCFOC(_motor);
+			    break;
+			}
+
 			case MOTOR_SENSOR_MODE_INCREMENTAL_ENCODER:
 				getIncEncAngle(_motor);
 				_motor->FOC.FOCAngle = _motor->FOC.enc_angle;
@@ -698,9 +788,9 @@ void fastLoop(MESC_motor_typedef *_motor) {
 	if(_motor->options.use_lr_observer){
 		  MESClrobs_Collect(_motor);
 	}
-
+//
 #ifdef USE_SPI_ENCODER
-      tle5012(_motor);
+    tle5012(_motor);
 #endif
 
 //RunPLL for all angle options
@@ -1251,7 +1341,8 @@ case SQRT_CIRCLE_LIM_VD:
     // We also need a number to set the maximum voltage that can be effectively
     // used by the SVPWM This is equal to
     // 0.5*Vbus*MAX_MODULATION*SVPWM_MULTIPLIER*Vd_MAX_PROPORTION
-    if(_motor->ControlMode != MOTOR_CONTROL_MODE_DUTY){_motor->FOC.Duty_scaler = 1.0f;}
+    if(_motor->ControlMode != MOTOR_CONTROL_MODE_DUTY)
+    	{_motor->FOC.Duty_scaler = 1.0f;}
     _motor->FOC.Vmag_max = 0.5f * _motor->Conv.Vbus *
     		_motor->FOC.Modulation_max * SVPWM_MULTIPLIER * _motor->FOC.Duty_scaler;
     _motor->FOC.V_3Q_mag_max =  _motor->FOC.Vmag_max * 0.75f;
@@ -1269,29 +1360,29 @@ case SQRT_CIRCLE_LIM_VD:
     _motor->FOC.FW_multiplier = 1.0f/(_motor->FOC.Vmag_max*(1.0f-FIELD_WEAKENING_THRESHOLD));
 
     switch(_motor->HFI.Type){//When running HFI we want the bandwidth low, so we calculate it with each slow loop depending on whether we are HFIing or not
-    case HFI_TYPE_NONE:
-    	__NOP();
-    case HFI_TYPE_45:
-    	//fallthrough
-    case HFI_TYPE_D:
-    	//fallthrough
-    case HFI_TYPE_SPECIAL:
+		case HFI_TYPE_NONE:
+			__NOP();
+		case HFI_TYPE_45:
+			//fallthrough
+		case HFI_TYPE_D:
+			//fallthrough
+		case HFI_TYPE_SPECIAL:
 
-		_motor->FOC.Id_pgain = _motor->FOC.Current_bandwidth * _motor->m.L_D;
-		_motor->FOC.Id_igain = _motor->m.R / _motor->m.L_D;
-		// Pole zero cancellation for series PI control
-		_motor->FOC.Iq_pgain = _motor->FOC.Id_pgain;
-		_motor->FOC.Iq_igain = _motor->FOC.Id_igain;
-		//This is the expected current magnitude we would see based on the average inductance and the injected voltage. Not particularly reliable currently.
-		//_motor->FOC.HFI_Threshold = ((HFI_VOLTAGE*sqrt2*2.0f)*_motor->FOC.pwm_period)/((_motor->m.L_D+_motor->m.L_Q)*0.5f);
-		if(HFI_THRESHOLD==0.0f){
-		_motor->HFI.toggle_voltage = mtr->Conv.Vbus*0.05f;
-			if(_motor->HFI.toggle_voltage<1.5f){_motor->HFI.toggle_voltage = 1.5f;} //Must be greater than HFI hysteresis
-		}else{
-		_motor->HFI.toggle_voltage = HFI_THRESHOLD;
+			_motor->FOC.Id_pgain = _motor->FOC.Current_bandwidth * _motor->m.L_D;
+			_motor->FOC.Id_igain = _motor->m.R / _motor->m.L_D;
+			// Pole zero cancellation for series PI control
+			_motor->FOC.Iq_pgain = _motor->FOC.Id_pgain;
+			_motor->FOC.Iq_igain = _motor->FOC.Id_igain;
+			//This is the expected current magnitude we would see based on the average inductance and the injected voltage. Not particularly reliable currently.
+			//_motor->FOC.HFI_Threshold = ((HFI_VOLTAGE*sqrt2*2.0f)*_motor->FOC.pwm_period)/((_motor->m.L_D+_motor->m.L_Q)*0.5f);
+			if(HFI_THRESHOLD==0.0f){
+			_motor->HFI.toggle_voltage = mtr->Conv.Vbus*0.05f;
+				if(_motor->HFI.toggle_voltage<1.5f){_motor->HFI.toggle_voltage = 1.5f;} //Must be greater than HFI hysteresis
+			}else{
+			_motor->HFI.toggle_voltage = HFI_THRESHOLD;
+			}
+			break;
 		}
-		break;
-    }
     //////Set the fault limits
 	//Set the overcurrent limit according to the requested current.
 	//This is important since using the board ABS_MAX may mean the motor DC resistance is high enough that a fault never trips it.
@@ -1305,7 +1396,7 @@ case SQRT_CIRCLE_LIM_VD:
 	//Set the over voltage limit dynamically, so that rapid spikes above the bus voltage are trapped.
 	//This should be more convenient for working with PSUs and batteries interchangeably
 	if(fabsf(_motor->FOC.Idq_req.q)<1.0f){
-	g_hw_setup.Vmax = 	0.995f * g_hw_setup.Vmax + 0.005f * (_motor->Conv.Vbus + 0.15f * ABS_MAX_BUS_VOLTAGE);
+		g_hw_setup.Vmax = 	0.995f * g_hw_setup.Vmax + 0.005f * (_motor->Conv.Vbus + 0.15f * ABS_MAX_BUS_VOLTAGE);
 	}
 	if(g_hw_setup.Vmax>ABS_MAX_BUS_VOLTAGE)	{
 		g_hw_setup.Vmax=ABS_MAX_BUS_VOLTAGE;
@@ -1325,7 +1416,7 @@ void MESC_Slow_IRQ_handler(MESC_motor_typedef *_motor){
 
 float  Square(float x){ return((x)*(x));}
 
-  void slowLoop(MESC_motor_typedef *_motor) {
+void slowLoop(MESC_motor_typedef *_motor) {
 // In this loop, we will fetch the throttle values, and run functions that
 // are critical, but do not need to be executed very often e.g. adjustment
 // for battery voltage change
@@ -1351,7 +1442,7 @@ float  Square(float x){ return((x)*(x));}
 
 	  switch(_motor->ControlMode){
 		  case MOTOR_CONTROL_MODE_TORQUE:
-//Dealt with in APP_NONE
+			  //Dealt with in APP_NONE
 			  break;
 		  case MOTOR_CONTROL_MODE_POSITION:
 			  RunPosControl(_motor);
@@ -1419,6 +1510,7 @@ float  Square(float x){ return((x)*(x));}
 			  __NOP();
 			  break;
 	  }
+
 	  /////////////////Handle the safe startup
 	  safeStart(_motor);
 	  /////////////////Handle the keybits (initialised flag, killswitch and safestart)
@@ -1434,9 +1526,10 @@ float  Square(float x){ return((x)*(x));}
 			//Seperate based on control mode. We NEED to have a fallthrough here in transition state!
 			//Does not seem possible to use nested switches due to fallthrough requirement :(
 			if(_motor->ControlMode == MOTOR_CONTROL_MODE_TORQUE){
-				if(MESCinput_isHandbrake()){_motor->ControlMode = MOTOR_CONTROL_MODE_HANDBRAKE;}
+				if(MESCinput_isHandbrake())
+					{_motor->ControlMode = MOTOR_CONTROL_MODE_HANDBRAKE;}
 				if(fabsf(_motor->FOC.Idq_prereq.q)>0.2f){
-					#ifdef HAS_PHASE_SENSORS
+#ifdef HAS_PHASE_SENSORS
 					if(_motor->MotorControlType == MOTOR_CONTROL_TYPE_FOC){
 						_motor->MotorState = MOTOR_STATE_RUN;
 					}else if(_motor->MotorControlType == MOTOR_CONTROL_TYPE_BLDC){
@@ -1446,7 +1539,7 @@ float  Square(float x){ return((x)*(x));}
 					#else
 					_motor->MotorState = MOTOR_STATE_RECOVERING;
 					break;
-					#endif
+#endif
 					//fallthrough to RUN, no break!
 				}else{
 					//Remain in tracking
@@ -1490,19 +1583,21 @@ float  Square(float x){ return((x)*(x));}
 			//Assign the Idqreq to the PI input
 			_motor->FOC.Idq_req.q = _motor->FOC.Idq_prereq.q;
 			_motor->FOC.Idq_req.d = _motor->FOC.Idq_prereq.d;
-			if(_motor->input_vars.UART_dreq){_motor->FOC.Idq_req.d = _motor->input_vars.UART_dreq;}//Override the calcs if a specific d is requested
+			if(_motor->input_vars.UART_dreq)
+				{_motor->FOC.Idq_req.d = _motor->input_vars.UART_dreq;}//Override the calcs if a specific d is requested
 			MESCpwm_generateEnable(_motor);
 			switch(_motor->ControlMode){
 				case MOTOR_CONTROL_MODE_TORQUE:
 					if(((fabsf(_motor->FOC.Idq_prereq.q)<0.1f))){//Request current small, FW not active
 						if((_motor->FOC.FW_current>-0.5f)){
-						_motor->MotorState = MOTOR_STATE_TRACKING;
-						MESCpwm_generateBreak(_motor);
+							_motor->MotorState = MOTOR_STATE_TRACKING;
+							MESCpwm_generateBreak(_motor);
 						}else{
 							FWRampDown(_motor);
 						}
 					}
-					if(MESCinput_isHandbrake()){_motor->ControlMode = MOTOR_CONTROL_MODE_HANDBRAKE;}
+					if(MESCinput_isHandbrake())
+						{_motor->ControlMode = MOTOR_CONTROL_MODE_HANDBRAKE;}
 					break;
 
 				case MOTOR_CONTROL_MODE_SPEED:
@@ -1739,6 +1834,7 @@ void MESCTrack(MESC_motor_typedef *_motor) {
 
   void tle5012(MESC_motor_typedef *_motor)
   {
+	 float diff;
 #ifdef USE_SPI_ENCODER
 	  uint16_t const len = sizeof(pkt) / sizeof(uint16_t);
 	  uint16_t reg = (UINT16_C(  1) << 15) /* RW=Read */
@@ -1749,42 +1845,26 @@ void MESCTrack(MESC_motor_typedef *_motor) {
       HAL_GPIO_WritePin(GPIOC, GPIO_PIN_11, GPIO_PIN_RESET);
       HAL_SPI_Transmit( &hspi3, (uint8_t *)&reg,   1, 1000 );
       HAL_SPI_Receive(  &hspi3, (uint8_t *)&pkt, len, 1000 );
-//      volatile uint8_t crc = 0;
-//#if 1
-//      reg ^= 0xFF00;
-//      crc = pkt_crc8( crc, &((uint8_t *)&reg)[1], 1 );
-//      crc = pkt_crc8( crc, &((uint8_t *)&reg)[0], 1 );
-//      crc = pkt_crc8( crc, &((uint8_t *)&pkt.angle)[1], 1 );
-//      crc = pkt_crc8( crc, &((uint8_t *)&pkt.angle)[0], 1 );
-//      crc = pkt_crc8( crc, &((uint8_t *)&pkt.speed)[1], 1 );
-//      crc = pkt_crc8( crc, &((uint8_t *)&pkt.speed)[0], 1 );
-//      crc = pkt_crc8( crc, &((uint8_t *)&pkt.revolutions)[1], 1 );
-//      crc = pkt_crc8( crc, &((uint8_t *)&pkt.revolutions)[0], 1 );
-//#else
-//      crc = pkt_crc8( crc, &reg, 2 );
-//      crc = pkt_crc8( crc, &pkt.angle, 6 );
-//#endif
-//      crc = pkt_crc8( crc, &pkt.safetyword.STAT_RESP, 1 );
-//      crc = ~crc;
-//      if (crc != pkt.safetyword.crc)
-//      {
-//    	  __NOP();
-//    	  __NOP();
-//    	  __NOP();
-//      }
-//      else
-//      {
-//    	  __NOP();
-//      }
-
-//      pkt.angle = pkt.angle & 0x7fff;
-#ifdef ENCODER_DIR_REVERSED
-      	  _motor->FOC.enc_angle = -_motor->m.pole_pairs*((pkt.angle *2)%_motor->m.pole_angle)-_motor->FOC.enc_offset;
-//#else
-//      _motor->FOC.enc_angle = _motor->m.pole_pairs*((pkt.angle *2)%_motor->m.pole_angle)-_motor->FOC.enc_offset;
-#endif
       HAL_GPIO_WritePin(GPIOC, GPIO_PIN_11, GPIO_PIN_SET);
-      pkt.revolutions = pkt.revolutions&0b0000000111111111;
+
+
+      //only calculate CRC on the safetyword
+//
+//       uint8_t crc_rx = pkt.safetyword.crc;   // raw 16-bit word from SPI
+//       uint8_t resp=pkt.safetyword.STAT_RESP;
+//       uint8_t crc = 0xFF;
+//       crc = pkt_crc8(crc, &resp, 1);
+//       crc = ~crc;
+ //      if ( crc_rx==crc) {
+
+		   pkt.angle = pkt.angle & 0x7fff; // angle is actuallyt counts from 0 -32768
+		   pkt.speed = pkt.speed & 0x7fff;
+		   pkt.revolutions = pkt.revolutions & 0x01ff;
+  		   _motor->pos.tle5012_pos=pkt.angle;
+
+  //     }
+
+
 #endif
   }
 
@@ -1806,12 +1886,15 @@ void HallFluxMonitor(MESC_motor_typedef *_motor){
 	}
 }
 void getIncEncAngle(MESC_motor_typedef *_motor){
+
+
 	if(_motor->FOC.encoder_polarity_invert){
 		_motor->FOC.enc_angle = _motor->m.pole_pairs*(65536-(_motor->FOC.enc_ratio*(uint16_t)_motor->enctimer->Instance->CNT-_motor->FOC.enc_ratio*(uint16_t)_motor->enctimer->Instance->CCR3)) + _motor->FOC.enc_offset;
 
 	}else{
 		_motor->FOC.enc_angle = _motor->m.pole_pairs*((_motor->FOC.enc_ratio*(uint16_t)_motor->enctimer->Instance->CNT-_motor->FOC.enc_ratio*(uint16_t)_motor->enctimer->Instance->CCR3)) + _motor->FOC.enc_offset;
 	}
+
 }
 
 void  logVars(MESC_motor_typedef *_motor){
@@ -2063,6 +2146,8 @@ void RunSpeedControl(MESC_motor_typedef *_motor){
 	float speed_error;
 	  if(_motor->MotorState == MOTOR_STATE_RUN){
 
+
+
 		speed_error = _motor->FOC.speed_kp*(_motor->FOC.speed_req - _motor->FOC.eHz);
 		//Bound the proportional term before we do anything with it
 		//We use the symetric terms here to allow fast PID ramps
@@ -2114,6 +2199,10 @@ TIM_HandleTypeDef _IC_TIMER
 }
 
 uint32_t SRtemp2, SRtemp3;
+
+
+
+
 void MESC_IC_IRQ_Handler(MESC_motor_typedef *_motor, uint32_t SR, uint32_t CCR1, uint32_t CCR2){
 #ifdef IC_TIMER_RCPWM
 	if((SR & 0x4)&&!(SR&0x1)){
@@ -2167,6 +2256,56 @@ void MESC_IC_IRQ_Handler(MESC_motor_typedef *_motor, uint32_t SR, uint32_t CCR1,
 		SRtemp3 = SR;
 		_motor->FOC.encoder_OK = 0;
 	}
+#endif
+//}
+
+#ifdef  USE_SPI_ENCODER
+
+		uint16_t temp_enc_ang;
+	    uint16_t enc_angle;
+
+	    //read only after the 10th count
+	    if ( counter> 5){
+			   //tle5012 angle is 15-bit so multiply by 2 to give 0-65535 range
+				enc_angle = _motor->pos.tle5012_pos *2;
+
+				temp_enc_ang =
+					_motor->FOC.enc_offset +
+					(uint16_t)(((uint32_t)enc_angle * _motor->m.pole_pairs) & 0xFFFF);
+
+
+				//Set the angles used and zero the counter
+				if(_motor->FOC.encoder_polarity_invert){
+					_motor->FOC.last_enc_period = _motor->FOC.enc_period_count;
+					_motor->FOC.enc_period_count = 0;
+					_motor->FOC.enc_angle = 65536 - temp_enc_ang;
+				} else{
+					_motor->FOC.last_enc_period = _motor->FOC.enc_period_count;
+					_motor->FOC.enc_angle = temp_enc_ang;
+					_motor->FOC.enc_period_count = 0;
+				}
+
+			//Calculate the deltas and steps
+			     if (_motor->FOC.enc_pwm_step > MIN_PWM_STEP){
+
+
+					_motor->FOC.enc_pwm_step = 0.8f*_motor->FOC.enc_pwm_step +
+							0.2f*(((int16_t)(_motor->FOC.enc_angle - _motor->FOC.last_enc_angle))/(_motor->FOC.last_enc_period + 0.1f));
+					_motor->FOC.last_enc_angle = _motor->FOC.enc_angle;
+
+				//For sensorless-PWM encoder combined mode
+				//Calculate the sin and cos coefficients for future use in the flux observer
+					sin_cos_fast((_motor->FOC.enc_angle), &_motor->FOC.encsin, &_motor->FOC.enccos);
+					}
+		//	if(SR & 0x1||_motor->FOC.encoder_pulse<14||_motor->FOC.encoder_pulse>(_motor->FOC.encoder_duration-7)){
+		//		SRtemp3 = SR;
+		//		_motor->FOC.encoder_OK = 0;
+		//	}
+	    counter=0;
+	    }
+	    else
+	    	counter++;
+
 #endif
 }
 
