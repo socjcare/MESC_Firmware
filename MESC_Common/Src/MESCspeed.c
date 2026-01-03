@@ -46,8 +46,8 @@ void RunModifiedSpeedControl(MESC_motor_typedef *_motor){
 
 
 
-	        if (align_counter > ALIGN_TIME_MS) {
-	            align_counter = 0;
+	        if (align_counter > ALIGN_TIME_TICKS) {
+	        	 _motor->speed_ctrl_limits.align_counter=0;
 	            _motor->FOC.Idq_prereq.d = 0.0f;
 	            _motor->speed_ctrl_state = SPEED_CTRL_TORQUE_START;
 	        }

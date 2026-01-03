@@ -228,8 +228,8 @@
 #define ALIGN_ID       0.3f     // A
 #endif
 
-#ifndef ALIGN_TIME_MS
-#define ALIGN_TIME_MS  100  //ms
+#ifndef ALIGN_TIME_TICKS
+#define ALIGN_TIME_TICKS  100 //number of loops
 #endif
 
 
@@ -798,6 +798,7 @@ typedef struct {
     float speed_req_max;
     float speed_req_min;
     uint16_t align_counter;  //counter for loop ticks used to apply starting torque
+    uint16_t speed_decim;   // decimation for speed
 
 //    // Speed PI
 //    float speed_kp;
@@ -827,6 +828,24 @@ typedef struct {
 //    uint32_t stall_time_ticks;
 
 } speed_ctrl_limits_t;
+
+
+// for position control
+typedef struct {
+    int32_t pos_target;   // counts (multi-turn)
+    float   vel_sp;       // counts/s
+    float   vel_limit;    // counts/s
+    float   acc_limit;    // counts/s^2
+    float   pos_kp;       // (counts/s) per count  => effectively 1/s
+    float pos_eps; 		// minimum value for position
+    uint16_t pos_decim;       // for running trajectory at lower rate
+    uint16_t enc_decim;		// decimation for encoder , skip read n times in fast loop
+    int32_t pos_abs;     // counts (rev*65536 + enc)
+    uint16_t enc_last;    //
+    int32_t  rev_count;
+    uint16_t last_mode;  // used for initialization when first entering Position mode
+} pos_ctrl_t;
+
 
 // end added by SC
 
@@ -866,6 +885,7 @@ typedef struct{
 	encoder_pll_t encoder_pll;   // for encoder angle pll
 	speed_ctrl_state_t speed_ctrl_state;  //state of speed control
 	speed_ctrl_limits_t speed_ctrl_limits;  // applicable limits for speed control
+	pos_ctrl_t position_ctrl; // position control variables
 }MESC_motor_typedef;
 
 extern MESC_motor_typedef mtr[NUM_MOTORS];

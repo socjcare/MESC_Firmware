@@ -610,26 +610,135 @@ void fastLoop(MESC_motor_typedef *_motor) {
 //			}
 
 			//PLL version
+//			case MOTOR_SENSOR_MODE_ABSOLUTE_ENCODER:
+//			{
+//			    /* Read absolute encoder */
+//			    tle5012(_motor);
+//
+//			    /* 15-bit → 16-bit electrical angle */
+//			    _motor->FOC.enc_angle = _motor->pos.tle5012_pos * 2;
+//
+//			    /* Run encoder PLL */
+//			    encoder_pll_run(_motor);
+//
+//			    /* Use PLL angle for FOC */
+//			    _motor->FOC.FOCAngle = (uint16_t)_motor->encoder_pll.theta_est;
+//
+//			    /* Optional but recommended: run observer for flux */
+//			    MESCfluxobs_run(_motor);
+//
+//			    MESCFOC(_motor);
+//			    break;
+//			}
+
 			case MOTOR_SENSOR_MODE_ABSOLUTE_ENCODER:
 			{
-			    /* Read absolute encoder */
-			    tle5012(_motor);
+			    /* ------------------------------------------------------------
+			     * 0) Read absolute encoder (TLE5012) - DECIMATED
+			     *    20kHz fast loop -> 10kHz encoder reads (enc_decim >= 2)
+			     * ------------------------------------------------------------ */
+			    if (++_motor->position_ctrl.enc_decim >= 2U) {                 // 20k/2 = 10kHz
+			        _motor->position_ctrl.enc_decim = 0U;
 
-			    /* 15-bit → 16-bit electrical angle */
-			    _motor->FOC.enc_angle = _motor->pos.tle5012_pos * 2;
+			        tle5012(_motor);                              // blocking SPI (OK at 10kHz usually)
 
-			    /* Run encoder PLL */
+			        /* 15-bit -> 16-bit angle */
+			        _motor->FOC.enc_angle = (uint16_t)(_motor->pos.tle5012_pos << 1); // *2
+			    }
+			    /* If decimated read didn't run this tick, FOC.enc_angle remains last value. */
+
+
+			    /* ------------------------------------------------------------
+			     * 1) Run encoder PLL EVERY tick
+			     *    Must run before speed controller so FOC.eHz is fresh.
+			     * ------------------------------------------------------------ */
 			    encoder_pll_run(_motor);
 
 			    /* Use PLL angle for FOC */
 			    _motor->FOC.FOCAngle = (uint16_t)_motor->encoder_pll.theta_est;
 
-			    /* Optional but recommended: run observer for flux */
-			    MESCfluxobs_run(_motor);
 
+			    /* ------------------------------------------------------------
+			     * 2) Multi-turn position tracking (cheap) - EVERY tick
+			     * ------------------------------------------------------------ */
+			    UpdatePositionMultiTurn(_motor, _motor->FOC.enc_angle);
+
+
+			    /* ------------------------------------------------------------
+			     * 3) Outer loops by control mode (DECIMATED)
+			     * ------------------------------------------------------------ */
+			    switch (_motor->ControlMode)
+			    {
+			        /* ========================= TORQUE MODE =========================
+			         * User directly commands torque current (Iq).
+			         * No speed controller used.
+			         */
+			        case MOTOR_CONTROL_MODE_TORQUE:
+			        {
+			            // Example: torque request already expressed as Iq request:
+			            // float iq_req = _motor->FOC.torque_iq_req;
+			            // _motor->FOC.Idq_prereq.q = clamp(iq_req,
+			            //                                 _motor->input_vars.min_request_Idq.q,
+			            //                                 _motor->input_vars.max_request_Idq.q);
+
+			            // Optional: set Id (field weakening / alignment) as needed
+			            // _motor->FOC.Idq_prereq.d = 0.0f;
+
+			            break;
+			        }
+
+			        /* ========================= SPEED MODE =========================
+			         * speed_req is set elsewhere (e.g. from UI/CAN)
+			         * Run speed PI at 2kHz.
+			         */
+			        case MOTOR_CONTROL_MODE_SPEED:
+			        {
+			            if (++_motor->speed_ctrl_limits.speed_decim >= 10U) {         // 20k/10 = 2kHz
+			                _motor->speed_ctrl_limits.speed_decim = 0U;
+			                RunModifiedSpeedControl(_motor);      // updates Idq_prereq.q
+			            }
+			            break;
+			        }
+
+			        /* ======================== POSITION MODE ========================
+			         * Position loop generates speed_req, speed PI generates Iq.
+			         * - trajectory + position controller at 1kHz
+			         * - speed PI at 2kHz
+			         */
+			        case MOTOR_CONTROL_MODE_POSITION:
+			        {
+			            if (++_motor->position_ctrl.pos_decim >= 20U) {         // 20k/20 = 1kHz
+			                _motor->position_ctrl.pos_decim = 0U;
+
+			                PositionTrajectoryStep(_motor, 0.001f);   // updates pos_ctrl.vel_sp
+			                RunModifiedSpeedControl(_motor);            // sets FOC.speed_req
+			            }
+
+			            if (++_motor->speed_ctrl_limits.speed_decim >= 10U) {         // 2kHz speed PI
+			                _motor->speed_ctrl_limits.speed_decim = 0U;
+			                RunModifiedSpeedControl(_motor);
+			            }
+			            break;
+			        }
+
+			        default:
+			        {
+			            /* Safe fallback */
+			            // _motor->FOC.Idq_prereq.q = 0.0f;
+			            break;
+			        }
+			    }
+
+
+			    /* ------------------------------------------------------------
+			     * 4) Optional flux observer + FOC current loop EVERY tick
+			     * ------------------------------------------------------------ */
+			    MESCfluxobs_run(_motor);
 			    MESCFOC(_motor);
+
 			    break;
 			}
+
 
 			case MOTOR_SENSOR_MODE_INCREMENTAL_ENCODER:
 				getIncEncAngle(_motor);
@@ -1477,6 +1586,7 @@ void slowLoop(MESC_motor_typedef *_motor) {
 // are critical, but do not need to be executed very often e.g. adjustment
 // for battery voltage change
 ///Process buttons for direction
+	uint16_t current_mode,last_mode;
 
 		houseKeeping(_motor);	//General dross that keeps things ticking over, like nudging the observer
 		MESCinput_Collect(_motor); //Get all the throttle inputs
@@ -1495,14 +1605,45 @@ void slowLoop(MESC_motor_typedef *_motor) {
 
 		}
 
-
 	  switch(_motor->ControlMode){
 		  case MOTOR_CONTROL_MODE_TORQUE:
 			  //Dealt with in APP_NONE
 			  break;
+
 		  case MOTOR_CONTROL_MODE_POSITION:
-			  RunPosControl(_motor);
+
+			  current_mode = _motor->ControlMode;
+
+//			   // Detect transition into POSITION mode (rising edge)
+			  if (current_mode== MOTOR_CONTROL_MODE_POSITION && _motor->position_ctrl.last_mode != MOTOR_CONTROL_MODE_POSITION)
+			  {
+//				  // ---- One-time init when ENTERING position mode ----
+				  _motor->position_ctrl.pos_target = _motor->position_ctrl.pos_abs;   // hold current position
+				  _motor->position_ctrl.vel_sp     = 0.0f;
+//
+//				  // Reset decimators so outer loops run immediately
+				  _motor->position_ctrl.pos_decim = 0;
+				  _motor->speed_ctrl_limits.speed_decim=0;
+				  _motor->position_ctrl.enc_decim = 0;
+//
+//				  // Reset speed integrator to avoid leftover torque
+				  _motor->FOC.speed_error_int = 0.0f;
+//
+//				  // Optional: force speed controller state to a sane starting state
+//				  // If your speed state machine "turns off" at speed_req=0, starting CLOSED_LOOP is better for position hold
+				  _motor->speed_ctrl_state = SPEED_CTRL_CLOSED_LOOP;
+//
+//				  // Optional: clear align counter so you don't get stuck in ALIGN
+				  _motor->speed_ctrl_limits.align_counter = 0;
+
+//
+//			      // Update last mode after handling transitions
+				  _motor->position_ctrl.last_mode = current_mode;
+			  }
+
+			  //RunPosControl(_motor);
 			  break;
+
 		  case MOTOR_CONTROL_MODE_SPEED:
 			  //TBC PID loop to convert eHz feedback to an iq request
 			 // RunSpeedControl(_motor);
@@ -1900,8 +2041,8 @@ void MESCTrack(MESC_motor_typedef *_motor) {
 	               | (UINT16_C(0x02) << 4) /* ADDR */
 	               | (len -1);            /* ND */
       HAL_GPIO_WritePin(GPIOC, GPIO_PIN_11, GPIO_PIN_RESET);
-      HAL_SPI_Transmit( &hspi3, (uint8_t *)&reg,   1, 1000 );
-      HAL_SPI_Receive(  &hspi3, (uint8_t *)&pkt, len, 1000 );
+      HAL_SPI_Transmit( &hspi3, (uint8_t *)&reg,   1, 10 );
+      HAL_SPI_Receive(  &hspi3, (uint8_t *)&pkt, len, 10 );
       HAL_GPIO_WritePin(GPIOC, GPIO_PIN_11, GPIO_PIN_SET);
 
 
