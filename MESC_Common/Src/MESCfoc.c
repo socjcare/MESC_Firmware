@@ -45,6 +45,7 @@
 #include "MESCtemp.h"
 #include "MESCerror.h"
 #include "MESCposition.h"
+#include "MESCspeed.h"
 #include "MESChfi.h"
 #include "MESCpwm.h"
 #include "MESCinput.h"
@@ -129,7 +130,7 @@ static inline void encoder_pll_run(MESC_motor_typedef *m)
     pll->theta_est &= 0xFFFF;
 }
 
-
+// end added by SC
 
 
 void MESCfoc_Init(MESC_motor_typedef *_motor) {
@@ -1504,7 +1505,8 @@ void slowLoop(MESC_motor_typedef *_motor) {
 			  break;
 		  case MOTOR_CONTROL_MODE_SPEED:
 			  //TBC PID loop to convert eHz feedback to an iq request
-			  RunSpeedControl(_motor);
+			 // RunSpeedControl(_motor);
+			  RunModifiedSpeedControl(_motor);
 			  break;
 		  case MOTOR_CONTROL_MODE_DUTY:
 			  _motor->FOC.Idq_prereq = _motor->input_vars.max_request_Idq;

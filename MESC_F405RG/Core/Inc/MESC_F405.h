@@ -18,7 +18,7 @@
 //#include "Q6F_minideskr1.h"
 
 
-#define HAS_PHASE_SENSORS //This refers to VOLTAGE sensing on phase, not current!
+//#define HAS_PHASE_SENSORS //This refers to VOLTAGE sensing on phase, not current!
 
 #define NUM_MOTORS	1
 
