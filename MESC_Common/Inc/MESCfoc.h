@@ -233,6 +233,16 @@
 #endif
 
 
+
+// if pwm running at 20Khz
+#define FAST_HZ   20000.0f
+#define FAST_DT   (1.0f / FAST_HZ)   // 0.00005f
+//deimating at 10
+#define SPD_DECIM     10.0f
+#define SPEED_LOOP_HZ (FAST_HZ / SPD_DECIM)   // 2000 Hz
+#define SPEED_DT      (1.0f / SPEED_LOOP_HZ)  // 0.0005f
+
+
 //end added by SC
 
 #define clamp(value, min, max) (min < max           \
@@ -799,7 +809,7 @@ typedef struct {
     float speed_req_min;
     uint16_t align_counter;  //counter for loop ticks used to apply starting torque
     uint16_t speed_decim;   // decimation for speed
-
+    uint16_t debug_counter;
 //    // Speed PI
 //    float speed_kp;
 //    float speed_ki;

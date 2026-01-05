@@ -117,15 +117,7 @@ void getRawADCVph(MESC_motor_typedef *_motor){
 }
 
 
-void mesc_init_1( MESC_motor_typedef *_motor )
-{
-    // Do nothing
-}
 
-void mesc_init_2( MESC_motor_typedef *_motor )
-{
-    // Do nothing
-}
 
 void mesc_init_3( MESC_motor_typedef *_motor )
 {
