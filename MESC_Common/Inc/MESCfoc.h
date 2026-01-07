@@ -201,12 +201,20 @@
 //added SC
 
 ///
-#ifndef ENC_PLL_KP
-#define ENC_PLL_KP  200     // proportional gain
-#endif
-#ifndef ENC_PLL_KI
-#define ENC_PLL_KI  5       // integral gain
-#endif
+//#ifndef ENC_PLL_KP
+//#define ENC_PLL_KP  200     // proportional gain
+//#endif
+//#ifndef ENC_PLL_KI
+//#define ENC_PLL_KI  5       // integral gain
+//#endif
+
+
+
+//recommended values for 20Kz ~40Hz bandwidth.floats
+
+#define ENC_PLL_KP 266.5f      // 1/s
+#define ENC_PLL_KI 35530.0f    // 1/s^2
+
 
 // for Speed control
 //threshold for real motion
@@ -216,20 +224,20 @@
 
 //starting torque to inject at standstill to overcome friction, A
 #ifndef START_IQ
-#define START_IQ          0.2f
+#define START_IQ          2.0f
 #endif
 // limit for maximum starting torque,A
 #ifndef START_IQ_MAX
-#define START_IQ_MAX      0.4f
+#define START_IQ_MAX      4.0f
 #endif
 
 //initial torque to align to D axis
 #ifndef ALIGN_ID
-#define ALIGN_ID       0.3f     // A
+#define ALIGN_ID       1.0f     // A
 #endif
 
 #ifndef ALIGN_TIME_TICKS
-#define ALIGN_TIME_TICKS  100 //number of loops
+#define ALIGN_TIME_TICKS  400 //number of loops
 #endif
 
 
@@ -786,9 +794,11 @@ typedef struct {
 
 // for encoder angle estimation
 typedef struct {
-    int32_t theta_est;     // estimated electrical angle (Q16: 0..65535)
-    int32_t omega_est;     // electrical speed (Q16 per control step)
-    int32_t integrator;    // PLL integrator
+    float  theta_est;     // estimated electrical angle (Q16: 0..65535)
+    float omega_est;     // electrical speed (Q16 per control step)
+    float integrator;    // PLL integrator
+    float Kp;			// proportioal gain
+    float Ki; 			//integral gain
 } encoder_pll_t;
 
 

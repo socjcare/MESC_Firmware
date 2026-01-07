@@ -154,6 +154,9 @@ void RunModifiedSpeedControl(MESC_motor_typedef *_motor)
         _motor->FOC.Idq_prereq.d = ALIGN_ID;
         _motor->FOC.Idq_prereq.q = 0.0f;
 
+        //in Speed mode, decimation results in 2Khz,  or 0.5ms
+        // so ALIGN_TIME_TICKS= 400 -> 200ms
+        //In Position mode, runs at 1  khz -> 800ms
         if (++_motor->speed_ctrl_limits.align_counter >= ALIGN_TIME_TICKS) {
             _motor->speed_ctrl_limits.align_counter = 0;
             _motor->FOC.Idq_prereq.d = 0.0f;

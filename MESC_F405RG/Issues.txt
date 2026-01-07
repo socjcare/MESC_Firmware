@@ -1,36 +1,20 @@
-Speed control initially works in sensorless mode
-kp = 0.135
-ki = 0.1
+Curret versio
 
-when switching to absolute encode, which does not work, then back to sensorless, it no longer works
-some settings migh have changed.  Needs to restart/cycle power to make it work again.
-Figure out what parameters changes.
-
-In Encoder mode, speed control still does not work. Using normal RunSPeedControl
-
-In current version, speed mode  and torque mode sometimes work in Encoder mode but needs
-small change in input currents.
-
-in absolute encoder mode - torque mode works.  /using pll for encoder angle but NO decimation
-speed mode does NOT work, Torque mode does work. this is using a timeout of 1000 for HALSPIRead/Write
-
-try changing timeout to 1 , test  torque mode  - works    sometimes,  have trouble spinning, probably due to battery?
-
-runSpeedcontrol, has no mechanism for Startup torque etcc. now using RunModifiedspeedcontrol 
-
-Using AbsoluteEncoder but using RunModified, problem in Torque mode. Using regularRunSpeedControl --? No Problem
-strange that it does not enter that piece of code, and yet it causes problem....??
-Only clue? Now it starts in SpeedMode instead of Torque mode. maybe in going to SpeedMode some initialization is not correct?
-otherwise, there should not be a reason why a piece of code that should never have been executed should affect operation.
-
-Maybe the issue is the timeou on the HalSPiRead... changed it back to 1000. more consistent spinning in torque mode.
+- Torque mode- works in sensorless and absolute encoder mode
+speed - does ot work with the RuModifiedSpeedControl in both Sensorless and
+Absolute Encoder Mode.
 
 
-      HAL_SPI_Transmit( &hspi3, (uint8_t *)&reg,   1, 1000 );
-      HAL_SPI_Receive(  &hspi3, (uint8_t *)&pkt, len, 1000 );
-      
-      now try again. No decimation
-
-
-looks like one of the issues is running SpeedControl in the slowloop. Now it is in the fastloop. 
-     
+There seems to be a problem when the startup mode has sensormode Absolute Encoder selected.
+ Torque mode does ot work. When chaged to Sensorless, Torque Mode works in both
+ sensorless and AbsoluteEncoder Mode.
+ 
+ Now, when switched to speed mode, no longer noisy.
+ 
+ FOC.PLL_Kp  and  FOC.PLL_Ki are used somewhere else so create a differet PLL value
+ for the encoder.
+ 
+ 
+ Now , torque and speed mode works in sensorless and absolute_encoder mode
+ 
+ 

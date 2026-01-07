@@ -109,26 +109,66 @@ static inline int32_t angle_error(int32_t a, int32_t b)
     return e;
 }
 
-
-static inline void encoder_pll_run(MESC_motor_typedef *m)
+// used for float values in encoder_pll_run
+static inline float wrap_16f(float x)
 {
-	encoder_pll_t *pll = &m->encoder_pll;
-
-    int32_t theta_meas = m->FOC.enc_angle;   // absolute encoder angle (0..65535)
-
-    /* Phase detector */
-    int32_t phase_err = angle_error(theta_meas, pll->theta_est);
-
-    /* PI controller */
-    pll->integrator += ENC_PLL_KI * phase_err;
-    pll->omega_est   = pll->integrator + ENC_PLL_KP * phase_err;
-
-    /* Integrate angle */
-    pll->theta_est += pll->omega_est;
-
-    /* Wrap */
-    pll->theta_est &= 0xFFFF;
+    // keep in [0, 65536)
+    while (x >= 65536.0f) x -= 65536.0f;
+    while (x < 0.0f)      x += 65536.0f;
+    return x;
 }
+
+static inline float angle_error_16f(float a, float b)
+{
+    float d = a - b;
+    if (d >  32768.0f) d -= 65536.0f;
+    if (d < -32768.0f) d += 65536.0f;
+    return d;
+}
+
+//
+//static inline void encoder_pll_run(MESC_motor_typedef *m)
+//{
+//	encoder_pll_t *pll = &m->encoder_pll;
+//
+//    int32_t theta_meas = m->FOC.enc_angle;   // absolute encoder angle (0..65535)
+//
+//    /* Phase detector */
+//    int32_t phase_err = angle_error(theta_meas, pll->theta_est);
+//
+//    /* PI controller */
+//    pll->integrator += ENC_PLL_KI * phase_err;
+//    pll->omega_est   = pll->integrator + ENC_PLL_KP * phase_err;
+//
+//    /* Integrate angle */
+//    pll->theta_est += pll->omega_est;
+//
+//    /* Wrap */
+//    pll->theta_est &= 0xFFFF;
+//}
+
+static inline void encoder_pll_run(MESC_motor_typedef *_motor)
+
+{
+    encoder_pll_t *pll = &_motor->encoder_pll;
+
+    // measurement must be ELECTRICAL angle in counts [0..65535]
+    float theta_meas = (float)(uint16_t)_motor->FOC.enc_angle;
+
+    float phase_err = angle_error_16f(theta_meas, pll->theta_est);
+
+    // PI in counts/s
+//    pll->integrator += _motor->FOC.PLL_ki * phase_err * FAST_DT;
+//    pll->omega_est   = pll->integrator + _motor->FOC.PLL_kp * phase_err;
+
+    pll->integrator += pll->Ki * phase_err * FAST_DT;
+    pll->omega_est   = pll->integrator + pll->Kp * phase_err;
+
+
+    // integrate angle (counts)
+    pll->theta_est = wrap_16f(pll->theta_est + pll->omega_est * FAST_DT);
+}
+
 
 // end added by SC
 
@@ -312,6 +352,24 @@ void MESCfoc_Init(MESC_motor_typedef *_motor) {
 	//Init the PLL values
 	_motor->FOC.PLL_kp = PLL_KP;
 	_motor->FOC.PLL_ki = PLL_KI;
+
+
+
+	//encoder pll initialization, added by SC
+
+//	_motor->encoder_pll.theta_est = (float)(uint16_t)m->FOC.enc_angle
+	_motor->encoder_pll.omega_est = 0.0f;
+	_motor->encoder_pll.integrator = 0.0f;
+	_motor->encoder_pll.omega_est = 0.0f;
+	_motor->encoder_pll.Kp = ENC_PLL_KP;
+	_motor->encoder_pll.Ki =ENC_PLL_KI;
+//	_motor->encoder_pll.Kp = PLL_KP;
+//	_motor->encoder_pll.Ki =PLL_KI;
+
+
+
+
+
 	//	//Init the POS values
 	_motor->pos.Kp = POS_KP;
 	_motor->pos.Ki = POS_KI;
@@ -642,8 +700,14 @@ void fastLoop(MESC_motor_typedef *_motor) {
 
 			        tle5012(_motor);                              // blocking SPI (OK at 10kHz usually)
 
-			        /* 15-bit -> 16-bit angle */
-			        _motor->FOC.enc_angle = (uint16_t)(_motor->pos.tle5012_pos << 1); // *2
+			        /* 15-bit -> 16-bit angle and convert to electrical angle */
+			        _motor->FOC.enc_angle = (uint16_t)(_motor->pos.tle5012_pos << 1) * _motor->m.pole_pairs;; // *2
+
+
+				    /* ------------------------------------------------------------
+				     * 2) Multi-turn position tracking (cheap) - EVERY tick
+				     * ------------------------------------------------------------ */
+				    UpdatePositionMultiTurn(_motor, _motor->FOC.enc_angle);
 			    }
 			    /* If decimated read didn't run this tick, FOC.enc_angle remains last value. */
 
@@ -658,10 +722,6 @@ void fastLoop(MESC_motor_typedef *_motor) {
 			    _motor->FOC.FOCAngle = (uint16_t)_motor->encoder_pll.theta_est;
 
 
-			    /* ------------------------------------------------------------
-			     * 2) Multi-turn position tracking (cheap) - EVERY tick
-			     * ------------------------------------------------------------ */
-			    UpdatePositionMultiTurn(_motor, _motor->FOC.enc_angle);
 
 
 			    /* ------------------------------------------------------------
