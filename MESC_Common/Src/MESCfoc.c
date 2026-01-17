@@ -102,25 +102,103 @@ static inline int32_t angle_error(int32_t a, int32_t b)
     if (e < -32768) e += 65536;
     return e;
 }
-static inline void encoder_pll_run(MESC_motor_typedef *m)
+
+// used for float values in encoder_pll_run
+static inline float wrap_16f(float x)
 {
-	encoder_pll_t *pll = &m->encoder_pll;
-
-    int32_t theta_meas = m->FOC.enc_angle;   // absolute encoder angle (0..65535)
-
-    /* Phase detector */
-    int32_t phase_err = angle_error(theta_meas, pll->theta_est);
-
-    /* PI controller */
-    pll->integrator += ENC_PLL_KI * phase_err;
-    pll->omega_est   = pll->integrator + ENC_PLL_KP * phase_err;
-
-    /* Integrate angle */
-    pll->theta_est += pll->omega_est;
-
-    /* Wrap */
-    pll->theta_est &= 0xFFFF;
+    // keep in [0, 65536)
+    while (x >= 65536.0f) x -= 65536.0f;
+    while (x < 0.0f)      x += 65536.0f;
+    return x;
 }
+
+static inline float angle_error_16f(float a, float b)
+{
+    float d = a - b;
+    if (d >  32768.0f) d -= 65536.0f;
+    if (d < -32768.0f) d += 65536.0f;
+    return d;
+}
+
+
+static inline void encoder_pll_run(MESC_motor_typedef *_motor)
+
+{
+    encoder_pll_t *pll = &_motor->encoder_pll;
+
+    // measurement must be ELECTRICAL angle in counts [0..65535]
+    float theta_meas = (float)(uint16_t)_motor->FOC.enc_angle;
+
+    float phase_err = angle_error_16f(theta_meas, pll->theta_est);
+
+    // PI in counts/s
+//    pll->integrator += _motor->FOC.PLL_ki * phase_err * FAST_DT;
+//    pll->omega_est   = pll->integrator + _motor->FOC.PLL_kp * phase_err;
+
+    pll->integrator += pll->Ki * phase_err * FAST_DT;
+    pll->omega_est   = pll->integrator + pll->Kp * phase_err;
+
+
+    // integrate angle (counts)
+    pll->theta_est = wrap_16f(pll->theta_est + pll->omega_est * FAST_DT);
+}
+
+static inline void UpdatePositionMultiTurn(MESC_motor_typedef* m, uint16_t enc)
+{
+    int32_t d = (int32_t)enc - (int32_t)m->position_ctrl.enc_last;
+
+    if (d >  32768) m->position_ctrl.rev_count--;   // wrapped backward
+    if (d < -32768) m->position_ctrl.rev_count++;   // wrapped forward
+
+    m->position_ctrl.enc_last = enc;
+    m->position_ctrl.pos_abs  = (m->position_ctrl.rev_count << 16) + (int32_t)enc; // counts
+}
+
+static inline float CountsPerSec_To_eHz(float cps, float pole_pairs)
+{
+    return (cps / 65536.0f) * pole_pairs;
+}
+static inline void PositionTrajectoryStep(MESC_motor_typedef* m, float dt)
+{
+    // error in counts
+    float err = (float)(m->position_ctrl.pos_target - m->position_ctrl.pos_abs);
+
+    // stopping distance in counts: v^2 / (2a)
+    float v  = m->position_ctrl.vel_sp;
+    float a  = m->position_ctrl.acc_limit;
+    float d_stop = (v*v) / (2.0f * a + 1e-9f);
+
+    // choose accel sign
+    float accel = 0.0f;
+    if (fabsf(err) <= d_stop) {
+        // decelerate toward 0
+        accel = (v > 0.0f) ? -a : +a;
+    } else {
+        // accelerate toward target
+        accel = (err > 0.0f) ? +a : -a;
+    }
+
+    // integrate velocity, clamp
+    v += accel * dt;
+    if (v >  m->position_ctrl.vel_limit) v =  m->position_ctrl.vel_limit;
+    if (v < -m->position_ctrl.vel_limit) v = -m->position_ctrl.vel_limit;
+
+    // if very close, settle
+    if (fabsf(err) < 5.0f && fabsf(v) < 20.0f) { // tweak thresholds
+        v = 0.0f;
+    }
+
+    m->position_ctrl.vel_sp = v;
+
+    // Convert to speed_req used by your speed controller (electrical Hz)
+    float eHz_ff = CountsPerSec_To_eHz(v, (float)m->m.pole_pairs);
+
+    // Optional: small P correction on position error (adds stiffness)
+    float eHz_p  = m->position_ctrl.pos_kp * err;  // pos_kp should be tuned small
+
+    m->FOC.speed_req = eHz_ff + eHz_p;
+}
+
 
 
 
@@ -275,8 +353,7 @@ void MESCfoc_Init(MESC_motor_typedef *_motor) {
 	_motor->FOC.enc_offset = ENCODER_E_OFFSET;
 	_motor->FOC.encoder_polarity_invert = DEFAULT_ENCODER_POLARITY;
 	_motor->FOC.enc_period_count = 1; //Avoid /0s
-
-
+//added by SC
 #ifdef USE_SPI_ENCODER
 	//TLE5012 abolute  encoder
 	_motor->m.enc_counts = 32768;//Default to this, common for many motors. Avoid div0.
@@ -289,6 +366,16 @@ void MESCfoc_Init(MESC_motor_typedef *_motor) {
 
 #endif
 
+	//encoder pll initialization, added by SC
+
+//	_motor->encoder_pll.theta_est = (float)(uint16_t)m->FOC.enc_angle
+	_motor->encoder_pll.omega_est = 0.0f;
+	_motor->encoder_pll.integrator = 0.0f;
+	_motor->encoder_pll.omega_est = 0.0f;
+	_motor->encoder_pll.Kp = ENC_PLL_KP;
+	_motor->encoder_pll.Ki =ENC_PLL_KI;
+//	_motor->encoder_pll.Kp = PLL_KP;
+//	_motor->encoder_pll.Ki =PLL_KI;
 	_motor->hall.hall_error = 0;
 	//Init the BLDC
 	_motor->BLDC.com_flux = _motor->m.flux_linkage*1.65f;//0.02f;
@@ -521,9 +608,119 @@ void fastLoop(MESC_motor_typedef *_motor) {
 				MESCFOC(_motor);
 				break;
 			case MOTOR_SENSOR_MODE_ABSOLUTE_ENCODER:
-				_motor->FOC.enc_period_count++;
-				_motor->FOC.FOCAngle = _motor->FOC.enc_angle + (uint16_t)((float)(_motor->FOC.enc_period_count) * (float)_motor->FOC.enc_pwm_step);
-				MESCFOC(_motor);
+//				_motor->FOC.enc_period_count++;
+//				_motor->FOC.FOCAngle = _motor->FOC.enc_angle + (uint16_t)((float)(_motor->FOC.enc_period_count) * (float)_motor->FOC.enc_pwm_step);
+//				MESCFOC(_motor);
+							{
+						    /* ------------------------------------------------------------
+						     * 0) Read absolute encoder (TLE5012) - DECIMATED
+						     *    20kHz fast loop -> 10kHz encoder reads (enc_decim >= 2)
+						     * ------------------------------------------------------------ */
+						    if (++_motor->position_ctrl.enc_decim >= 2U) {                 // 20k/2 = 10kHz
+						        _motor->position_ctrl.enc_decim = 0U;
+
+						        tle5012(_motor);                              // blocking SPI (OK at 10kHz usually)
+
+						        /* 15-bit -> 16-bit angle and convert to electrical angle */
+						        _motor->FOC.enc_angle = (uint16_t)(_motor->pos.tle5012_pos << 1) * _motor->m.pole_pairs;; // *2
+
+
+							    /* ------------------------------------------------------------
+							     * 2) Multi-turn position tracking (cheap) - EVERY tick
+							     * ------------------------------------------------------------ */
+							    UpdatePositionMultiTurn(_motor, _motor->FOC.enc_angle);
+						    }
+						    /* If decimated read didn't run this tick, FOC.enc_angle remains last value. */
+
+
+						    /* ------------------------------------------------------------
+						     * 1) Run encoder PLL EVERY tick
+						     *    Must run before speed controller so FOC.eHz is fresh.
+						     * ------------------------------------------------------------ */
+						    encoder_pll_run(_motor);
+
+						    /* Use PLL angle for FOC */
+						    _motor->FOC.FOCAngle = (uint16_t)_motor->encoder_pll.theta_est;
+
+
+
+
+						    /* ------------------------------------------------------------
+						     * 3) Outer loops by control mode (DECIMATED)
+						     * ------------------------------------------------------------ */
+						    switch (_motor->ControlMode)
+						    {
+						        /* ========================= TORQUE MODE =========================
+						         * User directly commands torque current (Iq).
+						         * No speed controller used.
+						         */
+						        case MOTOR_CONTROL_MODE_TORQUE:
+						        {
+						            // Example: torque request already expressed as Iq request:
+						            // float iq_req = _motor->FOC.torque_iq_req;
+						            // _motor->FOC.Idq_prereq.q = clamp(iq_req,
+						            //                                 _motor->input_vars.min_request_Idq.q,
+						            //                                 _motor->input_vars.max_request_Idq.q);
+
+						            // Optional: set Id (field weakening / alignment) as needed
+						            // _motor->FOC.Idq_prereq.d = 0.0f;
+
+						            break;
+						        }
+
+						        /* ========================= SPEED MODE =========================
+						         * speed_req is set elsewhere (e.g. from UI/CAN)
+						         * Run speed PI at 2kHz.
+						         */
+						        case MOTOR_CONTROL_MODE_SPEED:
+						        {
+						            if (++_motor->speed_ctrl_limits.speed_decim >= 10U) {         // 20k/10 = 2kHz
+						                _motor->speed_ctrl_limits.speed_decim = 0U;
+						                RunModifiedSpeedControl(_motor);      // updates Idq_prereq.q
+						            }
+						            break;
+						        }
+
+						        /* ======================== POSITION MODE ========================
+						         * Position loop generates speed_req, speed PI generates Iq.
+						         * - trajectory + position controller at 1kHz
+						         * - speed PI at 2kHz
+						         */
+						        case MOTOR_CONTROL_MODE_POSITION:
+						        {
+						            if (++_motor->position_ctrl.pos_decim >= 20U) {         // 20k/20 = 1kHz
+						                _motor->position_ctrl.pos_decim = 0U;
+
+						                PositionTrajectoryStep(_motor, 0.001f);   // updates pos_ctrl.vel_sp
+						                RunModifiedSpeedControl(_motor);            // sets FOC.speed_req
+						            }
+
+						            if (++_motor->speed_ctrl_limits.speed_decim >= 10U) {         // 2kHz speed PI
+						                _motor->speed_ctrl_limits.speed_decim = 0U;
+						                RunModifiedSpeedControl(_motor);
+						            }
+						            break;
+						        }
+
+						        default:
+						        {
+						            /* Safe fallback */
+						            // _motor->FOC.Idq_prereq.q = 0.0f;
+						            break;
+						        }
+						    }
+
+
+						    /* ------------------------------------------------------------
+						     * 4) Optional flux observer + FOC current loop EVERY tick
+						     * ------------------------------------------------------------ */
+						    MESCfluxobs_run(_motor);
+						    MESCFOC(_motor);
+
+						    break;
+						}
+
+
 				break;
 			case MOTOR_SENSOR_MODE_INCREMENTAL_ENCODER:
 				getIncEncAngle(_motor);
