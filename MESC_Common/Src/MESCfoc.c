@@ -54,6 +54,7 @@
 #include "MESCBLDC.h"
 #include "MESCApp.h"
 
+
 #include "conversions.h"
 
 #include <math.h>
@@ -91,6 +92,37 @@ static void houseKeeping(MESC_motor_typedef *_motor);
 static void clampBatteryPower(MESC_motor_typedef *_motor);
 static void ThrottleTemperature(MESC_motor_typedef *_motor);
 static void FWRampDown(MESC_motor_typedef *_motor);
+
+//Added SC for tle5012 encoder stuff
+
+static inline int32_t angle_error(int32_t a, int32_t b)
+{
+    int32_t e = a - b;
+    if (e >  32768) e -= 65536;
+    if (e < -32768) e += 65536;
+    return e;
+}
+static inline void encoder_pll_run(MESC_motor_typedef *m)
+{
+	encoder_pll_t *pll = &m->encoder_pll;
+
+    int32_t theta_meas = m->FOC.enc_angle;   // absolute encoder angle (0..65535)
+
+    /* Phase detector */
+    int32_t phase_err = angle_error(theta_meas, pll->theta_est);
+
+    /* PI controller */
+    pll->integrator += ENC_PLL_KI * phase_err;
+    pll->omega_est   = pll->integrator + ENC_PLL_KP * phase_err;
+
+    /* Integrate angle */
+    pll->theta_est += pll->omega_est;
+
+    /* Wrap */
+    pll->theta_est &= 0xFFFF;
+}
+
+
 
 void MESCfoc_Init(MESC_motor_typedef *_motor) {
 #ifdef STM32L4 // For some reason, ST have decided to have a different name for the L4 timer DBG freeze...
@@ -244,10 +276,18 @@ void MESCfoc_Init(MESC_motor_typedef *_motor) {
 	_motor->FOC.encoder_polarity_invert = DEFAULT_ENCODER_POLARITY;
 	_motor->FOC.enc_period_count = 1; //Avoid /0s
 
+
+#ifdef USE_SPI_ENCODER
+	//TLE5012 abolute  encoder
+	_motor->m.enc_counts = 32768;//Default to this, common for many motors. Avoid div0.
+	_motor->FOC.enc_ratio = 65536/_motor->m.enc_counts;
+
+#else
 	//ABI Incremental encoder
 	_motor->m.enc_counts = 4096;//Default to this, common for many motors. Avoid div0.
 	_motor->FOC.enc_ratio = 65536/_motor->m.enc_counts;
 
+#endif
 
 	_motor->hall.hall_error = 0;
 	//Init the BLDC
@@ -699,9 +739,11 @@ void fastLoop(MESC_motor_typedef *_motor) {
 		  MESClrobs_Collect(_motor);
 	}
 
-#ifdef USE_SPI_ENCODER
-      tle5012(_motor);
-#endif
+	// do not call , reading is done in absolute_encoder section above
+//#ifdef USE_SPI_ENCODER
+//      tle5012(_motor);
+//
+//#endif
 
 //RunPLL for all angle options
 	_motor->FOC.PLL_angle = _motor->FOC.PLL_angle + (int16_t)_motor->FOC.PLL_int + (int16_t)_motor->FOC.PLL_error;
@@ -1739,7 +1781,7 @@ void MESCTrack(MESC_motor_typedef *_motor) {
 
   void tle5012(MESC_motor_typedef *_motor)
   {
-#ifdef USE_SPI_ENCODER
+
 	  uint16_t const len = sizeof(pkt) / sizeof(uint16_t);
 	  uint16_t reg = (UINT16_C(  1) << 15) /* RW=Read */
 	               | (UINT16_C(0x0) << 11) /* Lock */
@@ -1749,43 +1791,16 @@ void MESCTrack(MESC_motor_typedef *_motor) {
       HAL_GPIO_WritePin(GPIOC, GPIO_PIN_11, GPIO_PIN_RESET);
       HAL_SPI_Transmit( &hspi3, (uint8_t *)&reg,   1, 1000 );
       HAL_SPI_Receive(  &hspi3, (uint8_t *)&pkt, len, 1000 );
-//      volatile uint8_t crc = 0;
-//#if 1
-//      reg ^= 0xFF00;
-//      crc = pkt_crc8( crc, &((uint8_t *)&reg)[1], 1 );
-//      crc = pkt_crc8( crc, &((uint8_t *)&reg)[0], 1 );
-//      crc = pkt_crc8( crc, &((uint8_t *)&pkt.angle)[1], 1 );
-//      crc = pkt_crc8( crc, &((uint8_t *)&pkt.angle)[0], 1 );
-//      crc = pkt_crc8( crc, &((uint8_t *)&pkt.speed)[1], 1 );
-//      crc = pkt_crc8( crc, &((uint8_t *)&pkt.speed)[0], 1 );
-//      crc = pkt_crc8( crc, &((uint8_t *)&pkt.revolutions)[1], 1 );
-//      crc = pkt_crc8( crc, &((uint8_t *)&pkt.revolutions)[0], 1 );
-//#else
-//      crc = pkt_crc8( crc, &reg, 2 );
-//      crc = pkt_crc8( crc, &pkt.angle, 6 );
-//#endif
-//      crc = pkt_crc8( crc, &pkt.safetyword.STAT_RESP, 1 );
-//      crc = ~crc;
-//      if (crc != pkt.safetyword.crc)
-//      {
-//    	  __NOP();
-//    	  __NOP();
-//    	  __NOP();
-//      }
-//      else
-//      {
-//    	  __NOP();
-//      }
-
-//      pkt.angle = pkt.angle & 0x7fff;
-#ifdef ENCODER_DIR_REVERSED
-      	  _motor->FOC.enc_angle = -_motor->m.pole_pairs*((pkt.angle *2)%_motor->m.pole_angle)-_motor->FOC.enc_offset;
-//#else
-//      _motor->FOC.enc_angle = _motor->m.pole_pairs*((pkt.angle *2)%_motor->m.pole_angle)-_motor->FOC.enc_offset;
-#endif
       HAL_GPIO_WritePin(GPIOC, GPIO_PIN_11, GPIO_PIN_SET);
+
+
+      pkt.angle = pkt.angle & 0x7fff;
+      _motor->pos.tle5012_pos = pkt.angle;
+
+   //do not call this function below until sure that  denominator is not 0!!!
+ //     _motor->FOC.enc_angle = -_motor->m.pole_pairs*((pkt.angle *2)%_motor->m.pole_angle)-_motor->FOC.enc_offset;
       pkt.revolutions = pkt.revolutions&0b0000000111111111;
-#endif
+
   }
 
 
