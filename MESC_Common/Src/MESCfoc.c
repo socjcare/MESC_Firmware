@@ -180,6 +180,8 @@ static inline void PositionTrajectoryStep(MESC_motor_typedef* m, float dt)
         accel = (err > 0.0f) ? +a : -a;
     }
 
+    //test
+    accel=0;
     // integrate velocity, clamp
     v += accel * dt;
     if (v >  m->position_ctrl.vel_limit) v =  m->position_ctrl.vel_limit;
@@ -712,18 +714,18 @@ void fastLoop(MESC_motor_typedef *_motor) {
 						         * - speed PI at 2kHz
 						         */
 						        case MOTOR_CONTROL_MODE_POSITION:
-
-						            if (++_motor->position_ctrl.pos_decim >= 20U) {         // 20k/20 = 1kHz
-						                _motor->position_ctrl.pos_decim = 0U;
-
-						                PositionTrajectoryStep(_motor, 0.001f);   // updates pos_ctrl.vel_sp
-						                RunModifiedSpeedControl(_motor);            // sets FOC.speed_req
-						            }
-
-						            if (++_motor->speed_ctrl_limits.speed_decim >= 10U) {         // 2kHz speed PI
-						                _motor->speed_ctrl_limits.speed_decim = 0U;
-						                RunModifiedSpeedControl(_motor);
-						            }
+//
+//						            if (++_motor->position_ctrl.pos_decim >= 20U) {         // 20k/20 = 1kHz
+//						                _motor->position_ctrl.pos_decim = 0U;
+//
+//						                PositionTrajectoryStep(_motor, 0.001f);   // updates pos_ctrl.vel_sp
+//						                RunModifiedSpeedControl(_motor);            // sets FOC.speed_req
+//						            }
+//
+//						            if (++_motor->speed_ctrl_limits.speed_decim >= 10U) {         // 2kHz speed PI
+//						                _motor->speed_ctrl_limits.speed_decim = 0U;
+//						                RunModifiedSpeedControl(_motor);
+//						            }
 						            break;
 
 
@@ -1622,7 +1624,8 @@ float  Square(float x){ return((x)*(x));}
 		  case MOTOR_CONTROL_MODE_POSITION:
 
 			  //RunPosControl(_motor);
-			  PositionTrajectoryStep(_motor,0.001f);
+			  //5ms for slowloop
+			  PositionTrajectoryStep(_motor,0.005f);
 			  RunSpeedControl(_motor);
 			  break;
 		  case MOTOR_CONTROL_MODE_SPEED:

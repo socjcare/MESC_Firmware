@@ -121,3 +121,9 @@ works(spins) with  original L value ---
  Implemented Position control
  Confirmed motor can spin in both direction. but had to make a change for the check in mn speed_req so that it will
  take - speed_req when starting.
+ 
+ 
+ Timer 2 - for slowLoop
+ Timer1 -pwm fastloop
+ 
+ at 168MHZ clock, slow loop happens every 5 ms
