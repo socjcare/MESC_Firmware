@@ -117,3 +117,7 @@ works(spins) with  original L value ---
 
  NOW works in Sensorless - both Speed and Torque mode. Most code added, but no change in logic for Speed Control.
  Next- implement speed control using absolute encoder sensor.
+ 
+ Implemented Position control
+ Confirmed motor can spin in both direction. but had to make a change for the check in mn speed_req so that it will
+ take - speed_req when starting.

@@ -158,6 +158,8 @@ static inline float CountsPerSec_To_eHz(float cps, float pole_pairs)
 {
     return (cps / 65536.0f) * pole_pairs;
 }
+
+//SC Position Trajectory
 static inline void PositionTrajectoryStep(MESC_motor_typedef* m, float dt)
 {
     // error in counts
@@ -187,6 +189,7 @@ static inline void PositionTrajectoryStep(MESC_motor_typedef* m, float dt)
     if (fabsf(err) < 5.0f && fabsf(v) < 20.0f) { // tweak thresholds
         v = 0.0f;
     }
+    m->position_ctrl.pos_error= err;
 
     m->position_ctrl.vel_sp = v;
 
@@ -196,7 +199,23 @@ static inline void PositionTrajectoryStep(MESC_motor_typedef* m, float dt)
     // Optional: small P correction on position error (adds stiffness)
     float eHz_p  = m->position_ctrl.pos_kp * err;  // pos_kp should be tuned small
 
-    m->FOC.speed_req = eHz_ff + eHz_p;
+
+    // ensure that it is above  the minimum speed that will allow motor to spin
+    // this is 25 ehz for Multistar
+    float cmd = eHz_ff + eHz_p;
+
+    // only if we still need to move
+    if (fabsf(err) >m->position_ctrl.pos_eps) {
+        float min_cmd = m->position_ctrl.speed_req_min;   // your measured threshold
+        if (fabsf(cmd) < min_cmd) {
+            cmd = copysignf(min_cmd, cmd);
+        }
+    } else {
+        cmd = 0.0f; // or let it settle normally
+    }
+
+
+    m->FOC.speed_req = cmd;
 }
 
 
@@ -353,7 +372,7 @@ void MESCfoc_Init(MESC_motor_typedef *_motor) {
 	_motor->FOC.enc_offset = ENCODER_E_OFFSET;
 	_motor->FOC.encoder_polarity_invert = DEFAULT_ENCODER_POLARITY;
 	_motor->FOC.enc_period_count = 1; //Avoid /0s
-//added by SC
+//added by SC - TLE5012 encoder
 #ifdef USE_SPI_ENCODER
 	//TLE5012 abolute  encoder
 	_motor->m.enc_counts = 32768;//Default to this, common for many motors. Avoid div0.
@@ -366,7 +385,8 @@ void MESCfoc_Init(MESC_motor_typedef *_motor) {
 
 #endif
 
-	//encoder pll initialization, added by SC
+	//encoder pll initialization, added by SC encoder pll  initialization
+
 
 //	_motor->encoder_pll.theta_est = (float)(uint16_t)m->FOC.enc_angle
 	_motor->encoder_pll.omega_est = 0.0f;
@@ -374,6 +394,18 @@ void MESCfoc_Init(MESC_motor_typedef *_motor) {
 	_motor->encoder_pll.omega_est = 0.0f;
 	_motor->encoder_pll.Kp = ENC_PLL_KP;
 	_motor->encoder_pll.Ki =ENC_PLL_KI;
+
+//position_controller initialization
+	// max 4 rev/s, for testing purposes
+	_motor->position_ctrl.pos_abs=0;
+	_motor->position_ctrl.pos_eps=100; //deadband, considered at the target
+	_motor->position_ctrl.rev_count=0;
+	_motor->position_ctrl.acc_limit=200000.0f;
+	_motor->position_ctrl.vel_limit=131072.0f;
+	_motor->position_ctrl.pos_kp=0.0001f;
+	_motor->position_ctrl.speed_req_min=25; //minimum speed that motor will spin
+
+
 //	_motor->encoder_pll.Kp = PLL_KP;
 //	_motor->encoder_pll.Ki =PLL_KI;
 	_motor->hall.hall_error = 0;
@@ -617,19 +649,6 @@ void fastLoop(MESC_motor_typedef *_motor) {
 						     *    20kHz fast loop -> 10kHz encoder reads (enc_decim >= 2)
 						     * ------------------------------------------------------------ */
 //						    if (++_motor->position_ctrl.enc_decim >= 2U) {                 // 20k/2 = 10kHz
-//						        _motor->position_ctrl.enc_decim = 0U;
-//
-//						        tle5012(_motor);                              // blocking SPI (OK at 10kHz usually)
-//
-//						        /* 15-bit -> 16-bit angle and convert to electrical angle */
-//						        _motor->FOC.enc_angle = (uint16_t)(_motor->pos.tle5012_pos << 1) * _motor->m.pole_pairs;; // *2
-//
-//
-//							    /* ------------------------------------------------------------
-//							     * 2) Multi-turn position tracking (cheap) - EVERY tick
-//							     * ------------------------------------------------------------ */
-//							    UpdatePositionMultiTurn(_motor, _motor->FOC.enc_angle);
-//						    }
 
 							tle5012(_motor);      //returns encoder angle already in 32-bit format
 							// convert to electrical angle */
@@ -1598,8 +1617,13 @@ float  Square(float x){ return((x)*(x));}
 		  case MOTOR_CONTROL_MODE_TORQUE:
 //Dealt with in APP_NONE
 			  break;
+
+			  //SC Speed and Position control
 		  case MOTOR_CONTROL_MODE_POSITION:
-			  RunPosControl(_motor);
+
+			  //RunPosControl(_motor);
+			  PositionTrajectoryStep(_motor,0.001f);
+			  RunSpeedControl(_motor);
 			  break;
 		  case MOTOR_CONTROL_MODE_SPEED:
 			  //TBC PID loop to convert eHz feedback to an iq request
@@ -1703,7 +1727,8 @@ float  Square(float x){ return((x)*(x));}
 					_motor->MotorState = MOTOR_STATE_RUN;
 				}
 			}else if(_motor->ControlMode == MOTOR_CONTROL_MODE_SPEED){
-					if(_motor->FOC.speed_req > 10.0f){
+				//SC allow - speed_req to reverse direction
+					if(fabsf(_motor->FOC.speed_req)> 10.0f){
 						_motor->MotorState = MOTOR_STATE_RUN;
 						//fallthrough to RUN, no break!
 					} else{

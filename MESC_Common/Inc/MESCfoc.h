@@ -150,7 +150,7 @@
 
 #define HALL_IIRN (1.0f-HALL_IIR)
 
-//Added by SC
+//Added by SC, initialization if MESCfoc.c
 #ifndef ENC_PLL_KP
 #define ENC_PLL_KP 0.5f
 #endif
@@ -193,7 +193,7 @@
 
 
 
-//end add by SC
+//end add
 
 //Position and speed estimator defaults
 #ifndef PLL_KP
@@ -820,8 +820,11 @@ typedef struct {
     uint16_t enc_decim;		// decimation for encoder , skip read n times in fast loop
     int32_t pos_abs;     // counts (rev*65536 + enc)
     uint16_t enc_last;    //
+    float pos_error;  // error
     int32_t  rev_count;
     uint16_t last_mode;  // used for initialization when first entering Position mode
+    float  speed_req_min;
+    uint32_t cycles_slowloop;
 } pos_ctrl_t;
 
 
@@ -859,7 +862,8 @@ typedef struct{
 	MESClrobs_s lrobs;
 	MESCoptionFlags_s options;
 	bool conf_is_valid;
-	//added SC all below
+	//added SC all below -new structs added
+
 	encoder_pll_t encoder_pll;   // for encoder angle pll
 	speed_ctrl_state_t speed_ctrl_state;  //state of speed control
 	speed_ctrl_limits_t speed_ctrl_limits;  // applicable limits for speed control

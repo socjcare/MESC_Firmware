@@ -48,3 +48,57 @@ _motor->FOC.Idq_prereq.d = 2.0f;
 
 	__NOP();
 }
+
+
+
+/*
+ * Position controller:
+ *  - Input:  pos_abs, pos_target  (encoder counts, multi-turn)
+ *  - Output: FOC.speed_req        (electrical Hz)
+ *
+ * Structure:
+ *   position P  -> speed request
+ *   speed loop  -> Iq
+ */
+void RunPositionController(MESC_motor_typedef *m)
+{
+    int32_t pos_err_i;
+    float   pos_err_f;
+    float   mech_speed_cps;   // mechanical speed in counts/sec
+
+    /* Position error in COUNTS */
+    pos_err_i = m->position_ctrl.pos_target - m->position_ctrl.pos_abs;
+
+    /* Deadband: hold position, do NOT command motion */
+    if (abs(pos_err_i) <= m->position_ctrl.pos_eps) {
+        m->FOC.speed_req = 0.0f;
+        m->position_ctrl.vel_sp = 0.0f;
+        return;
+    }
+
+    pos_err_f = (float)pos_err_i;
+
+    /*
+     * Position P controller
+     * Units:
+     *   pos_kp: (counts/sec) per count  => 1/sec
+     */
+    mech_speed_cps =
+        m->position_ctrl.pos_kp * pos_err_f +
+        m->position_ctrl.vel_sp;   // trajectory feedforward
+
+    /* Clamp mechanical speed */
+    if (mech_speed_cps >  m->position_ctrl.vel_limit)
+        mech_speed_cps =  m->position_ctrl.vel_limit;
+    if (mech_speed_cps < -m->position_ctrl.vel_limit)
+        mech_speed_cps = -m->position_ctrl.vel_limit;
+
+    /*
+     * Convert mechanical counts/sec -> electrical Hz
+     *
+     * 1 mechanical rev = 65536 counts
+     * electrical Hz = mech_rev/s * pole_pairs
+     */
+    m->FOC.speed_req =
+        (mech_speed_cps / 65536.0f) * (float)m->m.pole_pairs;
+}

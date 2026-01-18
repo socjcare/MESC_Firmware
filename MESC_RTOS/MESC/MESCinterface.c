@@ -523,7 +523,7 @@ void populate_vars(){
 	TERM_addVar(mtr[0].FOC.FOC_advance				, -10.0f	, 10.0f		, "FOC_Advance"	, "FOC advance, proportion of 1 PWM cycle"													, VAR_ACCESS_RW	, callback	, &TERM_varList);
 	TERM_addVar(mtr[0].FOC.speed_kp					, 0.0f		, 6000000.0f, "speed_kp"	, "amps/Hz proportional gain"																, VAR_ACCESS_RW	, callback	, &TERM_varList);
 	TERM_addVar(mtr[0].FOC.speed_ki					, 0.0f		, 6000000.0f, "speed_ki"	, "amps/Hz integral gain"																	, VAR_ACCESS_RW	, callback	, &TERM_varList);
-	TERM_addVar(mtr[0].FOC.speed_req				, 0.0f		, 5000.0f	, "speed_req"	, "Hz"																						, VAR_ACCESS_RW	, callback	, &TERM_varList);
+	TERM_addVar(mtr[0].FOC.speed_req				, -5000.0f	, 5000.0f	, "speed_req"	, "Hz"																						, VAR_ACCESS_RW	, callback	, &TERM_varList);
 	TERM_addVar(mtr[0].FOC.Idq_req.q 		, -4096.0f 	, 4096.0f  	, "iqreq" 		, "mtr[0].FOC.Idq_req.q"     																, VAR_ACCESS_TR , NULL      , &TERM_varList);
 	TERM_addVar(mtr[0].FOC.Idq_smoothed.q 	, -HUGE_VAL , HUGE_VAL  , "iq"      	, "Phase Idq_q smoothed"                   													, VAR_ACCESS_TR , NULL      , &TERM_varList);
 
