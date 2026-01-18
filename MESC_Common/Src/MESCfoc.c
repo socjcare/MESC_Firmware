@@ -616,25 +616,31 @@ void fastLoop(MESC_motor_typedef *_motor) {
 						     * 0) Read absolute encoder (TLE5012) - DECIMATED
 						     *    20kHz fast loop -> 10kHz encoder reads (enc_decim >= 2)
 						     * ------------------------------------------------------------ */
-						    if (++_motor->position_ctrl.enc_decim >= 2U) {                 // 20k/2 = 10kHz
-						        _motor->position_ctrl.enc_decim = 0U;
+//						    if (++_motor->position_ctrl.enc_decim >= 2U) {                 // 20k/2 = 10kHz
+//						        _motor->position_ctrl.enc_decim = 0U;
+//
+//						        tle5012(_motor);                              // blocking SPI (OK at 10kHz usually)
+//
+//						        /* 15-bit -> 16-bit angle and convert to electrical angle */
+//						        _motor->FOC.enc_angle = (uint16_t)(_motor->pos.tle5012_pos << 1) * _motor->m.pole_pairs;; // *2
+//
+//
+//							    /* ------------------------------------------------------------
+//							     * 2) Multi-turn position tracking (cheap) - EVERY tick
+//							     * ------------------------------------------------------------ */
+//							    UpdatePositionMultiTurn(_motor, _motor->FOC.enc_angle);
+//						    }
 
-						        tle5012(_motor);                              // blocking SPI (OK at 10kHz usually)
+							tle5012(_motor);      //returns encoder angle already in 32-bit format
+							// convert to electrical angle */
+							_motor->FOC.enc_angle = (uint16_t)(_motor->pos.tle5012_pos << 1) * _motor->m.pole_pairs;; // *2
 
-						        /* 15-bit -> 16-bit angle and convert to electrical angle */
-						        _motor->FOC.enc_angle = (uint16_t)(_motor->pos.tle5012_pos << 1) * _motor->m.pole_pairs;; // *2
+							/* ------------------------------------------------------------
+							 * 2) Multi-turn position tracking (cheap) - EVERY tick
+							 * ------------------------------------------------------------ */
+							UpdatePositionMultiTurn(_motor, _motor->FOC.enc_angle);
 
-
-							    /* ------------------------------------------------------------
-							     * 2) Multi-turn position tracking (cheap) - EVERY tick
-							     * ------------------------------------------------------------ */
-							    UpdatePositionMultiTurn(_motor, _motor->FOC.enc_angle);
-						    }
-						    /* If decimated read didn't run this tick, FOC.enc_angle remains last value. */
-
-
-						    /* ------------------------------------------------------------
-						     * 1) Run encoder PLL EVERY tick
+						     /* 1) Run encoder PLL EVERY tick
 						     *    Must run before speed controller so FOC.eHz is fresh.
 						     * ------------------------------------------------------------ */
 						    encoder_pll_run(_motor);
@@ -655,7 +661,7 @@ void fastLoop(MESC_motor_typedef *_motor) {
 						         * No speed controller used.
 						         */
 						        case MOTOR_CONTROL_MODE_TORQUE:
-						        {
+
 						            // Example: torque request already expressed as Iq request:
 						            // float iq_req = _motor->FOC.torque_iq_req;
 						            // _motor->FOC.Idq_prereq.q = clamp(iq_req,
@@ -666,20 +672,20 @@ void fastLoop(MESC_motor_typedef *_motor) {
 						            // _motor->FOC.Idq_prereq.d = 0.0f;
 
 						            break;
-						        }
+
 
 						        /* ========================= SPEED MODE =========================
 						         * speed_req is set elsewhere (e.g. from UI/CAN)
 						         * Run speed PI at 2kHz.
 						         */
 						        case MOTOR_CONTROL_MODE_SPEED:
-						        {
-						            if (++_motor->speed_ctrl_limits.speed_decim >= 10U) {         // 20k/10 = 2kHz
-						                _motor->speed_ctrl_limits.speed_decim = 0U;
-						                RunModifiedSpeedControl(_motor);      // updates Idq_prereq.q
-						            }
+
+//						            if (++_motor->speed_ctrl_limits.speed_decim >= 10U) {         // 20k/10 = 2kHz
+//						                _motor->speed_ctrl_limits.speed_decim = 0U;
+//						                RunModifiedSpeedControl(_motor);      // updates Idq_prereq.q
+//						            }
 						            break;
-						        }
+
 
 						        /* ======================== POSITION MODE ========================
 						         * Position loop generates speed_req, speed PI generates Iq.
@@ -687,7 +693,7 @@ void fastLoop(MESC_motor_typedef *_motor) {
 						         * - speed PI at 2kHz
 						         */
 						        case MOTOR_CONTROL_MODE_POSITION:
-						        {
+
 						            if (++_motor->position_ctrl.pos_decim >= 20U) {         // 20k/20 = 1kHz
 						                _motor->position_ctrl.pos_decim = 0U;
 
@@ -700,14 +706,14 @@ void fastLoop(MESC_motor_typedef *_motor) {
 						                RunModifiedSpeedControl(_motor);
 						            }
 						            break;
-						        }
+
 
 						        default:
-						        {
+
 						            /* Safe fallback */
 						            // _motor->FOC.Idq_prereq.q = 0.0f;
 						            break;
-						        }
+
 						    }
 
 
@@ -1597,6 +1603,7 @@ float  Square(float x){ return((x)*(x));}
 			  break;
 		  case MOTOR_CONTROL_MODE_SPEED:
 			  //TBC PID loop to convert eHz feedback to an iq request
+
 			  RunSpeedControl(_motor);
 			  break;
 		  case MOTOR_CONTROL_MODE_DUTY:

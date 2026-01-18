@@ -150,6 +150,51 @@
 
 #define HALL_IIRN (1.0f-HALL_IIR)
 
+//Added by SC
+#ifndef ENC_PLL_KP
+#define ENC_PLL_KP 0.5f
+#endif
+#ifndef ENC_PLL_KI
+#define ENC_PLL_KI 0.02f
+#endif
+
+// for Speed control
+//threshold for real motion
+#ifndef START_SPEED_EPS
+#define START_SPEED_EPS   1.0f     // eHz
+#endif
+
+//starting torque to inject at standstill to overcome friction, A
+#ifndef START_IQ
+#define START_IQ          0.2f
+#endif
+
+// limit for maximum starting torque,A
+#ifndef START_IQ_MAX
+#define START_IQ_MAX      0.4f
+#endif
+
+//initial torque to align to D axis
+#ifndef ALIGN_ID
+#define ALIGN_ID       0.3f     // A
+#endif
+
+#ifndef ALIGN_TIME_MS
+#define ALIGN_TIME_MS  100  //ms
+#endif
+
+// if pwm running at 20Khz
+#define FAST_HZ   20000.0f
+#define FAST_DT   (1.0f / FAST_HZ)   // 0.00005f
+//deimating at 10
+#define SPD_DECIM     10.0f
+#define SPEED_LOOP_HZ (FAST_HZ / SPD_DECIM)   // 2000 Hz
+#define SPEED_DT      (1.0f / SPEED_LOOP_HZ)  // 0.0005f
+
+
+
+//end add by SC
+
 //Position and speed estimator defaults
 #ifndef PLL_KP
 #define PLL_KP 0.5f
@@ -196,6 +241,7 @@
 #ifndef ENCODER_E_OFFSET
 #define ENCODER_E_OFFSET 0
 #endif
+
 
 
 #define clamp(value, min, max) (min < max           \
@@ -547,6 +593,10 @@ typedef struct{
 	float int_error;
 	uint32_t set_position;
 	int32_t deadzone;
+	int32_t tle5012_pos; //raw angle from tle5012
+	float last_pos;
+	uint32_t encoder_offset;
+	uint32_t rev_count;
 }MESCPos_s;
 
 //Logging
@@ -730,6 +780,53 @@ typedef struct {
 	uint8_t app_type;
 } MESCoptionFlags_s;
 
+// for encoder angle estimation
+typedef struct {
+	 float  theta_est;     // estimated electrical angle (Q16: 0..65535)
+	    float omega_est;     // electrical speed (Q16 per control step)
+	    float integrator;    // PLL integrator
+	    float Kp;			// proportioal gain
+	    float Ki; 			//integral gain
+} encoder_pll_t;
+
+
+//states for Speed control
+
+typedef enum {
+    SPEED_CTRL_IDLE = 0,
+    SPEED_CTRL_ALIGN,
+    SPEED_CTRL_TORQUE_START,
+    SPEED_CTRL_CLOSED_LOOP
+} speed_ctrl_state_t;
+
+typedef struct {
+    // Speed command
+    float speed_req;
+    float speed_req_max;
+    float speed_req_min;
+    uint16_t align_counter;  //counter for loop ticks used to apply starting torque
+    uint8_t speed_decim;
+} speed_ctrl_limits_t;
+
+// for position control
+typedef struct {
+    int32_t pos_target;   // counts (multi-turn)
+    float   vel_sp;       // counts/s
+    float   vel_limit;    // counts/s
+    float   acc_limit;    // counts/s^2
+    float   pos_kp;       // (counts/s) per count  => effectively 1/s
+    float pos_eps; 		// minimum value for position
+    uint16_t pos_decim;       // for running trajectory at lower rate
+    uint16_t enc_decim;		// decimation for encoder , skip read n times in fast loop
+    int32_t pos_abs;     // counts (rev*65536 + enc)
+    uint16_t enc_last;    //
+    int32_t  rev_count;
+    uint16_t last_mode;  // used for initialization when first entering Position mode
+} pos_ctrl_t;
+
+
+
+
 ///////////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////Main typedef for starting a motor instance////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////
@@ -762,6 +859,11 @@ typedef struct{
 	MESClrobs_s lrobs;
 	MESCoptionFlags_s options;
 	bool conf_is_valid;
+	//added SC all below
+	encoder_pll_t encoder_pll;   // for encoder angle pll
+	speed_ctrl_state_t speed_ctrl_state;  //state of speed control
+	speed_ctrl_limits_t speed_ctrl_limits;  // applicable limits for speed control
+	pos_ctrl_t position_ctrl;
 }MESC_motor_typedef;
 
 extern MESC_motor_typedef mtr[NUM_MOTORS];

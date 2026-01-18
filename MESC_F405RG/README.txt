@@ -115,4 +115,5 @@ flux - 0.00162 mWb
 
 works(spins) with  original L value ---
 
- 
+ NOW works in Sensorless - both Speed and Torque mode. Most code added, but no change in logic for Speed Control.
+ Next- implement speed control using absolute encoder sensor.
