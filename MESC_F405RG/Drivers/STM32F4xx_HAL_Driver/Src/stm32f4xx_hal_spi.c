@@ -2494,6 +2494,8 @@ void HAL_SPI_IRQHandler(SPI_HandleTypeDef *hspi)
   }
 }
 
+
+
 /**
   * @brief  Tx Transfer completed callback.
   * @param  hspi pointer to a SPI_HandleTypeDef structure that contains

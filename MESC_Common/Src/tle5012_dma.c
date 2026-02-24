@@ -1,16 +1,18 @@
 #include "tle5012_dma.h"
 
-typedef struct __attribute__((packed)) {
-    uint16_t safety;
-    uint16_t angle;
-    uint16_t speed;
-    uint16_t revolutions;
-    // add more uint16_t fields if your ND expects more words
-} tle_pkt_t;
 
-tle_pkt_t pkt;
 
-volatile enum { TLE_IDLE, TLE_TX, TLE_RX, TLE_DONE, TLE_ERR } tle_state = TLE_IDLE;
+uint16_t reg_word;
+
+//volatile tle_state_t tle_state;
+volatile tle_pkt_t pkt;
+volatile tle_state_t tle_state =TLE_IDLE;
+
+//volatile uint16_t tle_angle_latest = 0;   // 0..65535 mapped
+
+
+static inline void CS_L(void){ HAL_GPIO_WritePin(GPIOC, GPIO_PIN_11, GPIO_PIN_RESET); }
+static inline void CS_H(void){ HAL_GPIO_WritePin(GPIOC, GPIO_PIN_11, GPIO_PIN_SET); }
 
 bool tle_read_start_dma(void)
 {
@@ -38,7 +40,7 @@ bool tle_read_start_dma(void)
     return true;
 }
 
-static void tle_recover_spi_dma(void)
+void tle_recover_spi_dma(void)
 {
     // Always release CS
     CS_H();
@@ -68,5 +70,45 @@ static void tle_recover_spi_dma(void)
     // Reset your driver state
     tle_state = TLE_IDLE;
 }
-inline void CS_L(void){ HAL_GPIO_WritePin(GPIOC, GPIO_PIN_11, GPIO_PIN_RESET); }
-inline void CS_H(void){ HAL_GPIO_WritePin(GPIOC, GPIO_PIN_11, GPIO_PIN_SET); }
+
+void HAL_SPI_TxCpltCallback(SPI_HandleTypeDef *hspi)
+{
+    if (hspi != &hspi3) return;
+    if (tle_state != TLE_TX) return;
+
+    tle_state = TLE_RX;
+
+    const uint16_t len = sizeof(pkt) / sizeof(uint16_t);
+   SPI_1LINE_RX(&hspi3);
+
+    // 16-bit SPI => Size=len receives len 16-bit words
+    if (HAL_SPI_Receive_DMA(&hspi3, (uint8_t*)&pkt, len) != HAL_OK) {
+        tle_state = TLE_ERR;
+        CS_H();
+    }
+}
+
+void HAL_SPI_RxCpltCallback(SPI_HandleTypeDef *hspi)
+{
+    if (hspi != &hspi3) return;
+    CS_H();
+
+    // Ensure transaction fully ended
+    while (__HAL_SPI_GET_FLAG(&hspi3, SPI_FLAG_BSY)) {}
+
+    if (__HAL_SPI_GET_FLAG(&hspi3, SPI_FLAG_OVR)) {
+        (void)hspi3.Instance->DR;
+        (void)hspi3.Instance->SR;
+    }
+
+    tle_state = TLE_DONE;
+}
+
+void HAL_SPI_ErrorCallback(SPI_HandleTypeDef *hspi)
+{
+    if (hspi != &hspi3) return;
+    CS_H();
+    tle_state = TLE_ERR;
+}
+
+

@@ -77,6 +77,10 @@ MESC_motor_typedef mtr[NUM_MOTORS];
 
 extern ADC_HandleTypeDef hadc1;
 
+//SC TLE5012 related
+//volatile tle_state_t tle_state = TLE_IDLE;
+
+
 
 //Debug
 #define DEMCR_TRCENA    0x01000000
@@ -992,10 +996,33 @@ void fastLoop(MESC_motor_typedef *_motor) {
 	}
 
 	// do not call , reading is done in absolute_encoder section above
-//#ifdef USE_SPI_ENCODER
+#ifdef USE_SPI_ENCODER
 //      tle5012(_motor);
-//
-//#endif
+
+	//SC test of DMA
+	static uint8_t decim = 0;
+
+	    if (++decim >= 10) {
+	        decim = 0;
+
+	        if (tle_state == TLE_IDLE && hspi3.State == HAL_SPI_STATE_READY) {
+	            tle_read_start_dma();   // kicks TX DMA, returns immediately
+	        }
+	    }
+
+	    if (tle_state == TLE_DONE) {
+			 tle_state = TLE_IDLE;
+			  uint16_t angle =(pkt.angle & 0x7fff)<<1;
+			 _motor->pos.tle5012_pos = angle;
+	    }
+	    if (tle_state == TLE_ERR) {
+	    	  tle_recover_spi_dma();
+	    }
+
+
+
+
+#endif
 
 //RunPLL for all angle options
 	_motor->FOC.PLL_angle = _motor->FOC.PLL_angle + (int16_t)_motor->FOC.PLL_int + (int16_t)_motor->FOC.PLL_error;
