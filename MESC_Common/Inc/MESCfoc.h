@@ -184,7 +184,7 @@
 #endif
 
 // if pwm running at 20Khz
-#define FAST_HZ   20000.0f
+#define FAST_HZ   400.0f
 #define FAST_DT   (1.0f / FAST_HZ)   // 0.00005f
 //deimating at 10
 #define SPD_DECIM     10.0f
@@ -825,6 +825,12 @@ typedef struct {
     uint16_t last_mode;  // used for initialization when first entering Position mode
     float  speed_req_min;
     uint32_t cycles_slowloop;
+    bool init_done;		// initialization flag
+    uint8_t enc_delta;   //maximum change  in tle5012 encoder to consider as valid
+    uint8_t sensor_mode;  // for testing
+    uint32_t enc_angle;
+
+
 } pos_ctrl_t;
 
 

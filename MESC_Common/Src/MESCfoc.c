@@ -53,6 +53,7 @@
 #include "MESClrobs.h"
 #include "MESCBLDC.h"
 #include "MESCApp.h"
+#include "tle5012_dma.h"
 
 
 #include "conversions.h"
@@ -127,7 +128,8 @@ static inline void encoder_pll_run(MESC_motor_typedef *_motor)
     encoder_pll_t *pll = &_motor->encoder_pll;
 
     // measurement must be ELECTRICAL angle in counts [0..65535]
-    float theta_meas = (float)(uint16_t)_motor->FOC.enc_angle;
+    //float theta_meas = (float)(uint16_t)_motor->FOC.enc_angle;
+    float theta_meas = (float)(uint16_t)_motor->position_ctrl.enc_angle;
 
     float phase_err = angle_error_16f(theta_meas, pll->theta_est);
 
@@ -406,6 +408,12 @@ void MESCfoc_Init(MESC_motor_typedef *_motor) {
 	_motor->position_ctrl.vel_limit=131072.0f;
 	_motor->position_ctrl.pos_kp=0.0001f;
 	_motor->position_ctrl.speed_req_min=25; //minimum speed that motor will spin
+	//encoder flag, 0  means not initialized
+    _motor->position_ctrl.init_done = 0;
+    _motor->position_ctrl.enc_delta=2000;
+    _motor->position_ctrl.sensor_mode=MOTOR_SENSOR_MODE_SENSORLESS;
+
+
 
 
 //	_motor->encoder_pll.Kp = PLL_KP;
@@ -467,6 +475,10 @@ void MESCfoc_Init(MESC_motor_typedef *_motor) {
     _motor->FOC.Current_bandwidth = CURRENT_BANDWIDTH;
 
     _motor->FOC.ortega_gain = 1000000.0f;
+
+
+
+
 
     MESClrobs_Init(_motor);
 
@@ -591,6 +603,9 @@ void MESC_ADC_IRQ_handler(MESC_motor_typedef *_motor){
 // since the currents require approximately 1us = 144 clock cycles (f405) and 72
 // clock cycles (f303) to convert.
 int16_t diff;
+
+//SC -fastLoop
+
 void fastLoop(MESC_motor_typedef *_motor) {
 	uint32_t cycles = CPU_CYCLES;
   // Call this directly from the TIM top IRQ
@@ -629,6 +644,19 @@ void fastLoop(MESC_motor_typedef *_motor) {
 					MESCfluxobs_run(_motor);
 				}
 				MESCFOC(_motor);
+
+				// troubleshooting
+//				 if (++_motor->position_ctrl.enc_decim >= 5U) {                 // 20k/2 = 10kHz
+//
+//				tle5012(_motor);      //returns encoder angle already in 32-bit format
+//				// convert to electrical angle */
+////				_motor->FOC.enc_angle = (uint16_t)(_motor->pos.tle5012_pos << 1) * _motor->m.pole_pairs;; // *2
+////				UpdatePositionMultiTurn(_motor, (uint16_t)(_motor->pos.tle5012_pos << 1) * _motor->m.pole_pairs);
+////				encoder_pll_run(_motor);
+////				_motor->position_ctrl.enc_decim=0;
+//				}
+
+
 				break;
 			case MOTOR_SENSOR_MODE_HALL:
 				_motor->HFI.inject = 0;
@@ -650,26 +678,26 @@ void fastLoop(MESC_motor_typedef *_motor) {
 						     * 0) Read absolute encoder (TLE5012) - DECIMATED
 						     *    20kHz fast loop -> 10kHz encoder reads (enc_decim >= 2)
 						     * ------------------------------------------------------------ */
-//						    if (++_motor->position_ctrl.enc_decim >= 2U) {                 // 20k/2 = 10kHz
-
-							tle5012(_motor);      //returns encoder angle already in 32-bit format
-							// convert to electrical angle */
-							_motor->FOC.enc_angle = (uint16_t)(_motor->pos.tle5012_pos << 1) * _motor->m.pole_pairs;; // *2
-
-							/* ------------------------------------------------------------
-							 * 2) Multi-turn position tracking (cheap) - EVERY tick
-							 * ------------------------------------------------------------ */
-							UpdatePositionMultiTurn(_motor, _motor->FOC.enc_angle);
-
-						     /* 1) Run encoder PLL EVERY tick
-						     *    Must run before speed controller so FOC.eHz is fresh.
-						     * ------------------------------------------------------------ */
-						    encoder_pll_run(_motor);
-
-						    /* Use PLL angle for FOC */
-						    _motor->FOC.FOCAngle = (uint16_t)_motor->encoder_pll.theta_est;
-
-
+//						    if (++_motor->position_ctrl.enc_decim >= 5U) {                 // 20k/2 = 10kHz
+//
+//							tle5012(_motor);      //returns encoder angle already in 32-bit format
+//							// convert to electrical angle */
+//							_motor->FOC.enc_angle = (uint16_t)(_motor->pos.tle5012_pos << 1) * _motor->m.pole_pairs;; // *2
+//
+//							/* ------------------------------------------------------------
+//							 * 2) Multi-turn position tracking (cheap) - EVERY tick
+//							 * ------------------------------------------------------------ */
+//							UpdatePositionMultiTurn(_motor, _motor->FOC.enc_angle);
+//
+//						     /* 1) Run encoder PLL EVERY tick
+//						     *    Must run before speed controller so FOC.eHz is fresh.
+//						     * ------------------------------------------------------------ */
+//						    encoder_pll_run(_motor);
+//
+//						    /* Use PLL angle for FOC */
+////						    _motor->FOC.FOCAngle = (uint16_t)_motor->encoder_pll.theta_est;
+//
+//						    }
 
 
 						    /* ------------------------------------------------------------
@@ -1617,6 +1645,11 @@ float  Square(float x){ return((x)*(x));}
 
 	  switch(_motor->ControlMode){
 		  case MOTOR_CONTROL_MODE_TORQUE:
+
+//		  tle5012(_motor);
+//			  _motor->FOC.enc_angle = (uint16_t)(_motor->pos.tle5012_pos << 1) * _motor->m.pole_pairs;; // *2
+//			  UpdatePositionMultiTurn(_motor, _motor->FOC.enc_angle);
+//			  encoder_pll_run(_motor);
 //Dealt with in APP_NONE
 			  break;
 
@@ -1629,7 +1662,21 @@ float  Square(float x){ return((x)*(x));}
 			  RunSpeedControl(_motor);
 			  break;
 		  case MOTOR_CONTROL_MODE_SPEED:
-			  //TBC PID loop to convert eHz feedback to an iq request
+//
+//			  	tle5012(_motor);
+			  if (_motor->MotorSensorMode==MOTOR_SENSOR_MODE_ABSOLUTE_ENCODER){
+					 if (++_motor->position_ctrl.enc_decim >= 10U) {                 // 20k/2 = 10kHz
+							_motor->position_ctrl.enc_decim=0;
+							//tle5012(_motor);      //returns encoder angle already in 32-bit format
+							UpdatePositionMultiTurn(_motor, (uint16_t)(_motor->pos.tle5012_pos << 1) * _motor->m.pole_pairs);
+
+							// convert to electrical angle */
+							_motor->position_ctrl.enc_angle = (_motor->pos.tle5012_pos << 1) * _motor->m.pole_pairs;// *2
+							encoder_pll_run(_motor);
+					 }
+
+			   }
+
 
 			  RunSpeedControl(_motor);
 			  break;
@@ -1996,44 +2043,60 @@ void MESCTrack(MESC_motor_typedef *_motor) {
       return crc;
   }
 
-  struct __attribute__ ((__packed__))SamplePacket
-  {
-	  	struct
-	  	{
-	  		uint8_t crc;
-	  		uint8_t STAT_RESP; // Should be 0xF_?
-	  	}safetyword;
-  	uint16_t angle;
-  	int16_t speed;
-  	uint16_t revolutions;
-  };
-
-  typedef struct SamplePacket SamplePacket;
-	  SamplePacket pkt;
-
-  void tle5012(MESC_motor_typedef *_motor)
-  {
-
-	  uint16_t const len = sizeof(pkt) / sizeof(uint16_t);
-	  uint16_t reg = (UINT16_C(  1) << 15) /* RW=Read */
-	               | (UINT16_C(0x0) << 11) /* Lock */
-	               | (UINT16_C(0x0) << 10) /* UPD=Buffer */
-	               | (UINT16_C(0x02) << 4) /* ADDR */
-	               | (len -1);            /* ND */
-      HAL_GPIO_WritePin(GPIOC, GPIO_PIN_11, GPIO_PIN_RESET);
-      HAL_SPI_Transmit( &hspi3, (uint8_t *)&reg,   1, 1000 );
-      HAL_SPI_Receive(  &hspi3, (uint8_t *)&pkt, len, 1000 );
-      HAL_GPIO_WritePin(GPIOC, GPIO_PIN_11, GPIO_PIN_SET);
+//  struct __attribute__ ((__packed__))SamplePacket
+//  {
+//	  	struct
+//	  	{
+//	  		uint8_t crc;
+//	  		uint8_t STAT_RESP; // Should be 0xF_?
+//	  	}safetyword;
+//  	uint16_t angle;
+//  	int16_t speed;
+//  	uint16_t revolutions;
+//  };
+//
+//  typedef struct SamplePacket SamplePacket;
+//	  SamplePacket pkt;
 
 
-      pkt.angle = pkt.angle & 0x7fff;
-      _motor->pos.tle5012_pos = pkt.angle;
+//SC - tle5012
+//  void tle5012(MESC_motor_typedef *_motor)
+//  {
+//
+//
+//	  uint16_t const len = sizeof(pkt) / sizeof(uint16_t);
+//	  uint16_t reg = (UINT16_C(  1) << 15) /* RW=Read */
+//	               | (UINT16_C(0x0) << 11) /* Lock */
+//	               | (UINT16_C(0x0) << 10) /* UPD=Buffer */
+//	               | (UINT16_C(0x02) << 4) /* ADDR */
+//	               | (len -1);            /* ND */
+//      HAL_GPIO_WritePin(GPIOC, GPIO_PIN_11, GPIO_PIN_RESET);
+//      HAL_SPI_Transmit( &hspi3, (uint8_t *)&reg,   1, 1000 );
+//      HAL_SPI_Receive(  &hspi3, (uint8_t *)&pkt, len, 1000 );
+//      HAL_GPIO_WritePin(GPIOC, GPIO_PIN_11, GPIO_PIN_SET);
+//
+//
+//
+//      pkt.angle = pkt.angle & 0x7fff;
+//
+//
+//      //one time
+////      if (_motor->position_ctrl.init_done == 0){
+////    	  _motor->pos.tle5012_pos= pkt.angle;
+////    	  _motor->position_ctrl.init_done=1;
+////      }
+////
+////      //at 5KHZ sampling, maximum count per rev that can happen if max rapm is 1200 rpm = 132
+////       //  (1200rpm/60) * 1/5000Hz) = 132-- set to 1000 for testing
+//////      //
+////    if ( abs(pkt.angle -_motor->pos.tle5012_pos)  <_motor->position_ctrl.enc_delta)
+//		  _motor->pos.tle5012_pos = pkt.angle;
+////
+//
+//
+//
+//  }
 
-   //do not call this function below until sure that  denominator is not 0!!!
- //     _motor->FOC.enc_angle = -_motor->m.pole_pairs*((pkt.angle *2)%_motor->m.pole_angle)-_motor->FOC.enc_offset;
-      pkt.revolutions = pkt.revolutions&0b0000000111111111;
-
-  }
 
 
 

@@ -165,7 +165,7 @@ void TASK_CAN_packet_received(TASK_CAN_handle * handle, uint32_t id, uint8_t sen
 
 #define ALLOWED_BLOCK_TIME 10
 
-
+//SC CAN RX handling
 void TASK_CAN_rx(void * argument){
 	port_str * port = argument;
 	TASK_CAN_handle * handle = port->hw;
@@ -362,6 +362,8 @@ __weak void TASK_CAN_aux_data(TASK_CAN_handle * handle){
   UNUSED(handle);
 }
 
+//SC CAN calls
+
 void TASK_CAN_telemetry(void * argument){
 	uint32_t count=0;
 	port_str * port = argument;
@@ -369,7 +371,8 @@ void TASK_CAN_telemetry(void * argument){
 	while(1){
 
 		if(count % 10 == 0){
-			TASK_CAN_telemetry_fast(handle);
+			//TASK_CAN_telemetry_fast(handle);
+			TASK_CAN_telemetry_tune(handle);
 		}
 		if(count==100){
 			TASK_CAN_telemetry_slow(handle);

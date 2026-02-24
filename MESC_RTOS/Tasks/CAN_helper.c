@@ -59,6 +59,26 @@ bool TASK_CAN_add_uint32(TASK_CAN_handle * handle, uint16_t message_id, uint8_t 
 	return xQueueSend(handle->tx_queue, &packet, pdMS_TO_TICKS(timeout));
 }
 
+//SC - modified TASK_CAN_add_uint32 to send in little_endian format, consistent with the
+// way floats are send in TASK_CAN_add_uint32
+bool TASK_CAN_add_u32x2(TASK_CAN_handle *handle, uint16_t message_id, uint8_t receiver,
+                        uint32_t a, uint32_t b, uint32_t timeout)
+{
+    TASK_CAN_packet packet;
+
+    packet.type = CANpacket_TYPE_MESC;
+    packet.message_id = message_id;
+    packet.receiver = receiver;
+    packet.sender = handle->node_id;
+    packet.len = 8;
+
+    memcpy(&packet.buffer[0], &a, sizeof(uint32_t));
+    memcpy(&packet.buffer[4], &b, sizeof(uint32_t));
+
+    return xQueueSend(handle->tx_queue, &packet, pdMS_TO_TICKS(timeout));
+}
+
+
 bool TASK_CAN_add_rawSTD(TASK_CAN_handle * handle, uint32_t message_id, uint8_t * data, uint8_t len, uint32_t timeout){
 	if(len>8) return false;
 	if(data == NULL) return false;

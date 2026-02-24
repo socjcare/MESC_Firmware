@@ -300,6 +300,8 @@ void stop_overlay_task(TERMINAL_HANDLE * handle){
 /*****************************************************************************
 *
 ******************************************************************************/
+
+//SC - commands status start/stop/json
 uint8_t CMD_status(TERMINAL_HANDLE * handle, uint8_t argCount, char ** args){
     if(argCount==0 || strcmp(args[0], "-?") == 0){
         ttprintf("Usage: status [start|stop]\r\n");

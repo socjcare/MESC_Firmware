@@ -34,6 +34,19 @@
 #define CAN_ID_SAMPLE_SEND		0x302
 
 
+#define CAN_ID_TUNING      		0x304  // tuning stream (same format as sample)
+
+#define CAN_ID_POS				0x305
+#define CAN_ID_SPEED_TUNE		0x306
+#define CAN_ID_PLL				0x307
+#define CAN_ID_ENCODER			0x308
+#define CAN_ID_IQ_REQ			0x309
+
+
+
+
+
+
 #define CAN_BROADCAST	0
 
 #define CAN_SAMPLE_FLAG_START	1
