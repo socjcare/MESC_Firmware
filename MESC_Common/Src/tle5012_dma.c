@@ -73,12 +73,15 @@ void tle_recover_spi_dma(void)
 
 void HAL_SPI_TxCpltCallback(SPI_HandleTypeDef *hspi)
 {
-    if (hspi != &hspi3) return;
-    if (tle_state != TLE_TX) return;
+    if (hspi != &hspi3)
+    	return;
+    if (tle_state != TLE_TX)
+    	return;
 
     tle_state = TLE_RX;
 
     const uint16_t len = sizeof(pkt) / sizeof(uint16_t);
+
    SPI_1LINE_RX(&hspi3);
 
     // 16-bit SPI => Size=len receives len 16-bit words
@@ -90,7 +93,8 @@ void HAL_SPI_TxCpltCallback(SPI_HandleTypeDef *hspi)
 
 void HAL_SPI_RxCpltCallback(SPI_HandleTypeDef *hspi)
 {
-    if (hspi != &hspi3) return;
+    if (hspi != &hspi3)
+    	return;
     CS_H();
 
     // Ensure transaction fully ended
@@ -100,6 +104,10 @@ void HAL_SPI_RxCpltCallback(SPI_HandleTypeDef *hspi)
         (void)hspi3.Instance->DR;
         (void)hspi3.Instance->SR;
     }
+
+    uint16_t *w = (uint16_t*)&pkt;
+
+
 
     tle_state = TLE_DONE;
 }

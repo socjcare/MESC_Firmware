@@ -997,27 +997,31 @@ void fastLoop(MESC_motor_typedef *_motor) {
 
 	// do not call , reading is done in absolute_encoder section above
 #ifdef USE_SPI_ENCODER
-//      tle5012(_motor);
+      tle5012(_motor);
+      uint16_t angle;
+      _motor->pos.tle5012_pos = angle;
 
 	//SC test of DMA
-	static uint8_t decim = 0;
-
-	    if (++decim >= 10) {
-	        decim = 0;
-
-	        if (tle_state == TLE_IDLE && hspi3.State == HAL_SPI_STATE_READY) {
-	            tle_read_start_dma();   // kicks TX DMA, returns immediately
-	        }
-	    }
-
-	    if (tle_state == TLE_DONE) {
-			 tle_state = TLE_IDLE;
-			  uint16_t angle =(pkt.angle & 0x7fff)<<1;
-			 _motor->pos.tle5012_pos = angle;
-	    }
-	    if (tle_state == TLE_ERR) {
-	    	  tle_recover_spi_dma();
-	    }
+//	static uint8_t decim = 0;
+//	 uint16_t angle;
+//
+//	    if (++decim >= 10000) {
+//	        decim = 0;
+//
+//	        if (tle_state == TLE_IDLE && hspi3.State == HAL_SPI_STATE_READY) {
+//	            tle_read_start_dma();   // kicks TX DMA, returns immediately
+//	           // _motor->pos.tle5012_pos = angle;
+//	        }
+//	    }
+//
+//			if (tle_state == TLE_DONE) {
+//				 tle_state = TLE_IDLE;
+//				 angle =(pkt.angle & 0x7fff)<<1;
+//				 _motor->pos.tle5012_pos = angle;
+//			}
+//			if (tle_state == TLE_ERR) {
+//				  tle_recover_spi_dma();
+//			}
 
 
 
@@ -2087,42 +2091,42 @@ void MESCTrack(MESC_motor_typedef *_motor) {
 
 
 //SC - tle5012
-//  void tle5012(MESC_motor_typedef *_motor)
-//  {
+  void tle5012(MESC_motor_typedef *_motor)
+  {
+
+
+	  uint16_t const len = sizeof(pkt) / sizeof(uint16_t);
+	  uint16_t reg = (UINT16_C(  1) << 15) /* RW=Read */
+	               | (UINT16_C(0x0) << 11) /* Lock */
+	               | (UINT16_C(0x0) << 10) /* UPD=Buffer */
+	               | (UINT16_C(0x02) << 4) /* ADDR */
+	               | (len -1);            /* ND */
+      HAL_GPIO_WritePin(GPIOC, GPIO_PIN_11, GPIO_PIN_RESET);
+      HAL_SPI_Transmit( &hspi3, (uint8_t *)&reg,   1, 1000 );
+      HAL_SPI_Receive(  &hspi3, (uint8_t *)&pkt, len, 1000 );
+      HAL_GPIO_WritePin(GPIOC, GPIO_PIN_11, GPIO_PIN_SET);
+
+
+
+      pkt.angle = pkt.angle & 0x7fff;
+
+
+      //one time
+//      if (_motor->position_ctrl.init_done == 0){
+//    	  _motor->pos.tle5012_pos= pkt.angle;
+//    	  _motor->position_ctrl.init_done=1;
+//      }
 //
+//      //at 5KHZ sampling, maximum count per rev that can happen if max rapm is 1200 rpm = 132
+//       //  (1200rpm/60) * 1/5000Hz) = 132-- set to 1000 for testing
+////      //
+//    if ( abs(pkt.angle -_motor->pos.tle5012_pos)  <_motor->position_ctrl.enc_delta)
+		  _motor->pos.tle5012_pos = pkt.angle;
 //
-//	  uint16_t const len = sizeof(pkt) / sizeof(uint16_t);
-//	  uint16_t reg = (UINT16_C(  1) << 15) /* RW=Read */
-//	               | (UINT16_C(0x0) << 11) /* Lock */
-//	               | (UINT16_C(0x0) << 10) /* UPD=Buffer */
-//	               | (UINT16_C(0x02) << 4) /* ADDR */
-//	               | (len -1);            /* ND */
-//      HAL_GPIO_WritePin(GPIOC, GPIO_PIN_11, GPIO_PIN_RESET);
-//      HAL_SPI_Transmit( &hspi3, (uint8_t *)&reg,   1, 1000 );
-//      HAL_SPI_Receive(  &hspi3, (uint8_t *)&pkt, len, 1000 );
-//      HAL_GPIO_WritePin(GPIOC, GPIO_PIN_11, GPIO_PIN_SET);
-//
-//
-//
-//      pkt.angle = pkt.angle & 0x7fff;
-//
-//
-//      //one time
-////      if (_motor->position_ctrl.init_done == 0){
-////    	  _motor->pos.tle5012_pos= pkt.angle;
-////    	  _motor->position_ctrl.init_done=1;
-////      }
-////
-////      //at 5KHZ sampling, maximum count per rev that can happen if max rapm is 1200 rpm = 132
-////       //  (1200rpm/60) * 1/5000Hz) = 132-- set to 1000 for testing
-//////      //
-////    if ( abs(pkt.angle -_motor->pos.tle5012_pos)  <_motor->position_ctrl.enc_delta)
-//		  _motor->pos.tle5012_pos = pkt.angle;
-////
-//
-//
-//
-//  }
+
+
+
+  }
 
 
 
