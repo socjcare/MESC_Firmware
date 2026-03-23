@@ -868,6 +868,9 @@ typedef struct {
     uint8_t enc_delta;   //maximum change  in tle5012 encoder to consider as valid
     uint8_t sensor_mode;  // for testing
     uint32_t enc_angle;
+    uint16_t error_count;
+    uint16_t missed_count;
+    uint16_t max_step_count;
 
 
     bool can_log_on;   //flag to turn on CAN tuning output

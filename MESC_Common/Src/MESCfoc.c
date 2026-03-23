@@ -456,8 +456,7 @@ void MESCfoc_Init(MESC_motor_typedef *_motor) {
     _motor->position_ctrl.init_done = 0;
     _motor->position_ctrl.enc_delta=2000;
     _motor->position_ctrl.sensor_mode=MOTOR_SENSOR_MODE_SENSORLESS;
-
-
+    _motor->position_ctrl.max_step_count=1000; // at 1800 rpm, sampling at 1khz
 
 
 //	_motor->encoder_pll.Kp = PLL_KP;
@@ -689,17 +688,6 @@ void fastLoop(MESC_motor_typedef *_motor) {
 				}
 				MESCFOC(_motor);
 
-				// troubleshooting
-//				 if (++_motor->position_ctrl.enc_decim >= 5U) {                 // 20k/2 = 10kHz
-//
-//				tle5012(_motor);      //returns encoder angle already in 32-bit format
-//				// convert to electrical angle */
-////				_motor->FOC.enc_angle = (uint16_t)(_motor->pos.tle5012_pos << 1) * _motor->m.pole_pairs;; // *2
-////				UpdatePositionMultiTurn(_motor, (uint16_t)(_motor->pos.tle5012_pos << 1) * _motor->m.pole_pairs);
-////				encoder_pll_run(_motor);
-////				_motor->position_ctrl.enc_decim=0;
-//				}
-
 
 				break;
 			case MOTOR_SENSOR_MODE_HALL:
@@ -716,59 +704,46 @@ void fastLoop(MESC_motor_typedef *_motor) {
 
 				//SC  - fastloop Absolute enc
 			case MOTOR_SENSOR_MODE_ABSOLUTE_ENCODER:
-//				_motor->FOC.enc_period_count++;
-//				_motor->FOC.FOCAngle = _motor->FOC.enc_angle + (uint16_t)((float)(_motor->FOC.enc_period_count) * (float)_motor->FOC.enc_pwm_step);
-//				MESCFOC(_motor);
-							{
-						    /* ------------------------------------------------------------
-						     * 0) Read absolute encoder (TLE5012) - DECIMATED
-						     *    20kHz fast loop -> 10kHz encoder reads (enc_decim >= 2)
-						     * ------------------------------------------------------------ */
 
-//						    if (++_motor->position_ctrl.enc_decim >= 5U) {                 // 20k/2 = 10kHz
-//
-//							tle5012(_motor);      //returns encoder angle already in 32-bit format
-//							// convert to electrical angle */
-//							_motor->FOC.enc_angle = (uint16_t)(_motor->pos.tle5012_pos << 1) * _motor->m.pole_pairs;; // *2
-//
-//							/* ------------------------------------------------------------
-//							 * 2) Multi-turn position tracking (cheap) - EVERY tick
-//							 * ------------------------------------------------------------ */
-//							UpdatePositionMultiTurn(_motor, _motor->FOC.enc_angle);
-//
-//						     /* 1) Run encoder PLL EVERY tick
-//						     *    Must run before speed controller so FOC.eHz is fresh.
-//						     * ------------------------------------------------------------ */
-//						    encoder_pll_run(_motor);
-//
-//						    /* Use PLL angle for FOC */
-////						    _motor->FOC.FOCAngle = (uint16_t)_motor->encoder_pll.theta_est;
-//
-//						    }
+				{
+				 uint16_t angle;
+				  if (++_motor->position_ctrl.pos_decim>= 20) {
+							_motor->position_ctrl.pos_decim = 0;
 
-						    if (++_motor->position_ctrl.enc_decim >= 5U) {                 // 20k/5 = 4kHz
-
-						    	_motor->position_ctrl.pos_decim = 0U;
-
-								tle5012(_motor);      //reads encoder angle
-								// convert to electrical angle */
-								_motor->FOC.enc_angle = (uint16_t)(_motor->pos.tle5012_pos << 1) * _motor->m.pole_pairs;; // *2
-								/* ------------------------------------------------------------
-								 * 2) Multi-turn position tracking - needs mechanical angle
-								 * ------------------------------------------------------------ */
-								UpdatePositionMultiTurn(_motor, (uint16_t)(_motor->pos.tle5012_pos << 1));
-
-								 /* 1) Run encoder PLL EVERY tick
-								 *    Must run before speed controller so FOC.eHz is fresh.
-								 * ------------------------------------------------------------ */
-								encoder_pll_run(_motor);
-
-								/* Use PLL angle for FOC */
-								_motor->FOC.FOCAngle = (uint16_t)_motor->encoder_pll.theta_est;
+							if (tle_state == TLE_IDLE && hspi3.State == HAL_SPI_STATE_READY) {
+								tle_read_start_dma();   // kicks TX DMA, returns immediately
+							}
+						}
+						if (tle_state == TLE_DONE) {
+							 tle_state = TLE_IDLE;
+							 if (pkt.safety & 0x7000){ // check the safety word bits 114/13/12
+								 angle = (pkt.angle & 0x7fff)<<1;  //mask and make it 16-bit
+								 if ( abs(angle_error(_motor->position_ctrl.enc_last,angle)) < _motor->position_ctrl.max_step_count){
+								 _motor->pos.tle5012_pos =angle;
+								 if (_motor->position_ctrl.missed_count> 0)// for now just record keeping
+									 _motor->position_ctrl.missed_count=0; // in future , used # of missed counts to estimate encoder position
+								 }
+							 }
+							 else
+							 {
+								_motor->position_ctrl.error_count++;
+							 	_motor->position_ctrl.missed_count++;
+							 }
+							}
+							if (tle_state == TLE_ERR) {
+								  tle_recover_spi_dma();
+							}
 
 
+							uint32_t mech32 = ((uint32_t)_motor->pos.tle5012_pos) << 16;
 
-						    }
+							_motor->position_ctrl.enc_angle =  mech32 * _motor->m.pole_pairs;
+							UpdatePositionMultiTurn(_motor, (uint16_t)(_motor->pos.tle5012_pos));
+							encoder_pll_run(_motor);
+
+							_motor->FOC.FOCAngle =  (int16_t)(_motor->position_ctrl.enc_angle >> 16);
+
+
 
 						    /* ------------------------------------------------------------
 						     * 3) Outer loops by control mode (DECIMATED)
@@ -787,47 +762,15 @@ void fastLoop(MESC_motor_typedef *_motor) {
 						         * Run speed PI at 2kHz.
 						         */
 						        case MOTOR_CONTROL_MODE_SPEED:
-
-//						            if (++_motor->speed_ctrl_limits.speed_decim >= 10U) {         // 20k/10 = 2kHz
-//						                _motor->speed_ctrl_limits.speed_decim = 0U;
-//						                RunModifiedSpeedControl(_motor);      // updates Idq_prereq.q
-//						            }
 						            break;
 
-
-						        /* ======================== POSITION MODE ========================
-						         * Position loop generates speed_req, speed PI generates Iq.
-						         * - trajectory + position controller at 1kHz
-						         * - speed PI at 2kHz
-						         */
 						        case MOTOR_CONTROL_MODE_POSITION:
-//
-//						            if (++_motor->position_ctrl.pos_decim >= 20U) {         // 20k/20 = 1kHz
-//						                _motor->position_ctrl.pos_decim = 0U;
-//
-//						                PositionTrajectoryStep(_motor, 0.001f);   // updates pos_ctrl.vel_sp
-//						                RunModifiedSpeedControl(_motor);            // sets FOC.speed_req
-//						            }
-//
-//						            if (++_motor->speed_ctrl_limits.speed_decim >= 10U) {         // 2kHz speed PI
-//						                _motor->speed_ctrl_limits.speed_decim = 0U;
-//						                RunModifiedSpeedControl(_motor);
-//						            }
 						            break;
-
 
 						        default:
-
-						            /* Safe fallback */
-						            // _motor->FOC.Idq_prereq.q = 0.0f;
 						            break;
 
 						    }
-
-
-						    /* ------------------------------------------------------------
-						     * 4) Optional flux observer + FOC current loop EVERY tick
-						     * ------------------------------------------------------------ */
 						    MESCfluxobs_run(_motor);
 						    MESCFOC(_motor);
 
@@ -1052,34 +995,6 @@ void fastLoop(MESC_motor_typedef *_motor) {
 
 	// do not call , reading is done in absolute_encoder section above
 #ifdef USE_SPI_ENCODER
-      tle5012(_motor);
-      uint16_t angle;
-      _motor->pos.tle5012_pos = angle;
-
-	//SC test of DMA
-//	static uint8_t decim = 0;
-//	 uint16_t angle;
-//
-//	    if (++decim >= 10000) {
-//	        decim = 0;
-//
-//	        if (tle_state == TLE_IDLE && hspi3.State == HAL_SPI_STATE_READY) {
-//	            tle_read_start_dma();   // kicks TX DMA, returns immediately
-//	           // _motor->pos.tle5012_pos = angle;
-//	        }
-//	    }
-//
-//			if (tle_state == TLE_DONE) {
-//				 tle_state = TLE_IDLE;
-//				 angle =(pkt.angle & 0x7fff)<<1;
-//				 _motor->pos.tle5012_pos = angle;
-//			}
-//			if (tle_state == TLE_ERR) {
-//				  tle_recover_spi_dma();
-//			}
-
-
-
 
 #endif
 
@@ -1735,40 +1650,13 @@ float  Square(float x){ return((x)*(x));}
 
 	  switch(_motor->ControlMode){
 		  case MOTOR_CONTROL_MODE_TORQUE:
-
-
-//		  tle5012(_motor);
-//			  _motor->FOC.enc_angle = (uint16_t)(_motor->pos.tle5012_pos << 1) * _motor->m.pole_pairs;; // *2
-//			  UpdatePositionMultiTurn(_motor, _motor->FOC.enc_angle);
-//			  encoder_pll_run(_motor);
 //Dealt with in APP_NONE
-
-//			  if( _motor->FOC.last_control_mode != MOTOR_CONTROL_MODE_TORQUE)
-//
-//			  				{
-//				  PLL_ReinitToEncoder(_motor);
-//				 					 _motor->position_ctrl.pos_target = _motor->position_ctrl.pos_abs;
-//				 					 _motor->position_ctrl.enc_last = _motor->pos.tle5012_pos;
-//				 //					 _motor->tuning.current_sample=0;
-//				 					 _motor->position_ctrl.vel_sp =0;
-//				 //					 _motor->position_ctrl.can_log_on=1;
-//			  				}
 
 			  break;
 
 			  //SC slow-loop  Speed and Position control
 		  case MOTOR_CONTROL_MODE_POSITION:
-			  if( _motor->FOC.last_control_mode != MOTOR_CONTROL_MODE_POSITION)
 
-				{
-					 PLL_ReinitToEncoder(_motor);
-					 _motor->position_ctrl.pos_target = _motor->position_ctrl.pos_abs;
-					 _motor->position_ctrl.enc_last = _motor->pos.tle5012_pos;
-//					 _motor->tuning.current_sample=0;
-					 _motor->position_ctrl.vel_sp =0;
-//					 _motor->position_ctrl.can_log_on=1;
-
-				}
 
 			  //RunPosControl(_motor);
 			  //5ms for slowloop
@@ -1779,34 +1667,6 @@ float  Square(float x){ return((x)*(x));}
 
 			  break;
 		  case MOTOR_CONTROL_MODE_SPEED:
-
-//
-//			  	tle5012(_motor);
-			  if (_motor->MotorSensorMode==MOTOR_SENSOR_MODE_ABSOLUTE_ENCODER){
-					 if (++_motor->position_ctrl.enc_decim >= 10U) {                 // 20k/2 = 10kHz
-							_motor->position_ctrl.enc_decim=0;
-							//tle5012(_motor);      //returns encoder angle already in 32-bit format
-							UpdatePositionMultiTurn(_motor, (uint16_t)(_motor->pos.tle5012_pos << 1) * _motor->m.pole_pairs);
-
-							// convert to electrical angle */
-							_motor->position_ctrl.enc_angle = (_motor->pos.tle5012_pos << 1) * _motor->m.pole_pairs;// *2
-							encoder_pll_run(_motor);
-					 }
-
-			   }
-
-
-
-			  //TBC PID loop to convert eHz feedback to an iq request
-//			  if( _motor->FOC.last_control_mode != MOTOR_CONTROL_MODE_SPEED)
-//				{
-//					 PLL_ReinitToEncoder(_motor);
-////					 _motor->tuning.current_sample=0;
-////					 _motor->position_ctrl.can_log_on=1;
-//
-//				}
-			  //logTuning(_motor);
-			  //tle5012(_motor);
 
 			  RunSpeedControl(_motor);
 			  break;
