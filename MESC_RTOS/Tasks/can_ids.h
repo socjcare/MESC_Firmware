@@ -32,6 +32,15 @@
 #define CAN_ID_SAMPLE			0x300
 #define CAN_ID_SAMPLE_NOW		0x301
 #define CAN_ID_SAMPLE_SEND		0x302
+//SC  ID for tuning data
+#define CAN_ID_TUNING			0x304
+
+
+#define CAN_ID_POS_INFO     	0x305
+#define CAN_ID_SPEED_TUNE	  	0x306
+#define CAN_ID_PLL_INFO 		0x307
+#define	CAN_ID_ENCODER 	        0x308
+#define CAN_ID_CURRENT_TUNE 	0x309
 
 
 #define CAN_ID_TUNING      		0x304  // tuning stream (same format as sample)

@@ -75,6 +75,9 @@ float two_on_sqrt3 = 1.15470f;
 
 MESC_motor_typedef mtr[NUM_MOTORS];
 
+static uint32_t test_int=0;
+static float test_float=0;
+
 extern ADC_HandleTypeDef hadc1;
 
 //SC TLE5012 related
@@ -170,6 +173,7 @@ static inline void PositionTrajectoryStep(MESC_motor_typedef* m, float dt)
 {
     // error in counts
     float err = (float)(m->position_ctrl.pos_target - m->position_ctrl.pos_abs);
+    float accel;
 
     // stopping distance in counts: v^2 / (2a)
     float v  = m->position_ctrl.vel_sp;
@@ -177,7 +181,7 @@ static inline void PositionTrajectoryStep(MESC_motor_typedef* m, float dt)
     float d_stop = (v*v) / (2.0f * a + 1e-9f);
 
     // choose accel sign
-    float accel = 0.0f;
+
     if (fabsf(err) <= d_stop) {
         // decelerate toward 0
         accel = (v > 0.0f) ? -a : +a;
@@ -226,6 +230,42 @@ static inline void PositionTrajectoryStep(MESC_motor_typedef* m, float dt)
     m->FOC.speed_req = cmd;
 }
 
+static inline void PLL_ReinitToEncoder(MESC_motor_typedef *m)
+{
+    // 1) Build electrical angle from current encoder reading
+    uint16_t mech16 = (uint16_t)(m->pos.tle5012_pos << 1);   // 15-bit -> 16-bit mechanical
+    uint16_t elec16 = (uint16_t)(((uint32_t)mech16 * (uint32_t)m->m.pole_pairs
+                                + (uint32_t)m->FOC.enc_offset) & 0xFFFFu);
+
+    // 2) Re-seed PLL states (float version)
+    m->encoder_pll.theta_est  = (float)elec16;
+    m->encoder_pll.omega_est  = 0.0f;   // counts/sec (if dt-safe PLL)
+    m->encoder_pll.integrator = 0.0f;
+
+    // 3) Make sure the very next FOC uses the same angle (avoid 1-tick glitch)
+    m->FOC.FOCAngle = elec16;
+}
+
+static inline void PositionConstSpeedTest(MESC_motor_typedef *m)
+{
+    int32_t err = m->position_ctrl.pos_target - m->position_ctrl.pos_abs;
+
+    float cmd = 0.0f;
+
+    // If we are outside the target window → move at constant speed
+    if (abs(err) > POS_EPS_COUNTS)
+    {
+        // direction from error sign
+        cmd = (err > 0) ? +TEST_SPEED_EHZ : -TEST_SPEED_EHZ;
+    }
+    else
+    {
+        // inside window → stop
+        cmd = 0.0f;
+    }
+
+    m->FOC.speed_req = cmd;
+}
 
 
 
@@ -673,6 +713,8 @@ void fastLoop(MESC_motor_typedef *_motor) {
 				OLGenerateAngle(_motor);
 				MESCFOC(_motor);
 				break;
+
+				//SC  - fastloop Absolute enc
 			case MOTOR_SENSOR_MODE_ABSOLUTE_ENCODER:
 //				_motor->FOC.enc_period_count++;
 //				_motor->FOC.FOCAngle = _motor->FOC.enc_angle + (uint16_t)((float)(_motor->FOC.enc_period_count) * (float)_motor->FOC.enc_pwm_step);
@@ -682,6 +724,7 @@ void fastLoop(MESC_motor_typedef *_motor) {
 						     * 0) Read absolute encoder (TLE5012) - DECIMATED
 						     *    20kHz fast loop -> 10kHz encoder reads (enc_decim >= 2)
 						     * ------------------------------------------------------------ */
+
 //						    if (++_motor->position_ctrl.enc_decim >= 5U) {                 // 20k/2 = 10kHz
 //
 //							tle5012(_motor);      //returns encoder angle already in 32-bit format
@@ -703,6 +746,29 @@ void fastLoop(MESC_motor_typedef *_motor) {
 //
 //						    }
 
+						    if (++_motor->position_ctrl.enc_decim >= 5U) {                 // 20k/5 = 4kHz
+
+						    	_motor->position_ctrl.pos_decim = 0U;
+
+								tle5012(_motor);      //reads encoder angle
+								// convert to electrical angle */
+								_motor->FOC.enc_angle = (uint16_t)(_motor->pos.tle5012_pos << 1) * _motor->m.pole_pairs;; // *2
+								/* ------------------------------------------------------------
+								 * 2) Multi-turn position tracking - needs mechanical angle
+								 * ------------------------------------------------------------ */
+								UpdatePositionMultiTurn(_motor, (uint16_t)(_motor->pos.tle5012_pos << 1));
+
+								 /* 1) Run encoder PLL EVERY tick
+								 *    Must run before speed controller so FOC.eHz is fresh.
+								 * ------------------------------------------------------------ */
+								encoder_pll_run(_motor);
+
+								/* Use PLL angle for FOC */
+								_motor->FOC.FOCAngle = (uint16_t)_motor->encoder_pll.theta_est;
+
+
+
+						    }
 
 						    /* ------------------------------------------------------------
 						     * 3) Outer loops by control mode (DECIMATED)
@@ -714,18 +780,7 @@ void fastLoop(MESC_motor_typedef *_motor) {
 						         * No speed controller used.
 						         */
 						        case MOTOR_CONTROL_MODE_TORQUE:
-
-						            // Example: torque request already expressed as Iq request:
-						            // float iq_req = _motor->FOC.torque_iq_req;
-						            // _motor->FOC.Idq_prereq.q = clamp(iq_req,
-						            //                                 _motor->input_vars.min_request_Idq.q,
-						            //                                 _motor->input_vars.max_request_Idq.q);
-
-						            // Optional: set Id (field weakening / alignment) as needed
-						            // _motor->FOC.Idq_prereq.d = 0.0f;
-
 						            break;
-
 
 						        /* ========================= SPEED MODE =========================
 						         * speed_req is set elsewhere (e.g. from UI/CAN)
@@ -1035,12 +1090,15 @@ void fastLoop(MESC_motor_typedef *_motor) {
 	_motor->FOC.PLL_int = _motor->FOC.PLL_int + _motor->FOC.PLL_ki * _motor->FOC.PLL_error;
 	_motor->FOC.eHz = _motor->FOC.PLL_int * _motor->FOC.pwm_frequency*0.00001526f;//1/65536
 
+//SC fastLoop logging call
 #ifdef LOGGING
 	if(_motor->logging.lognow){
 		static int post_error_samples;
+
+		//no error and sampling flag is off, start logging
 		if(_motor->MotorState!=MOTOR_STATE_ERROR && _motor->logging.sample_now == false){
-		logVars(_motor);
-		post_error_samples = LOGLENGTH/2;
+			logVars(_motor);
+			post_error_samples = LOGLENGTH/2;
 		}else{//If we have an error state, we want to keep the data surrounding the error log, including some sampled during and after the fault
 			if(post_error_samples>1){
 				logVars(_motor);
@@ -1055,19 +1113,19 @@ void fastLoop(MESC_motor_typedef *_motor) {
 		}
 	}
 #endif
+
+//#ifdef TUNING
+//	if(_motor->tuning.lognow){
+//
+//		if(_motor->MotorState!=MOTOR_STATE_ERROR && _motor->logging.sample_now == false){
+//		logTuning(_motor);
+//		}
+//	}
+//#endif
    _motor->FOC.cycles_fastloop = CPU_CYCLES - cycles;
+
 }
 
-// The hyperloop runs at PWM timer bottom, when the PWM is in V7 (all high)
-// In this loop, we write the values of the PWM to be updated at the next update
-// event (timer top) This is where we want to inject signals for measurement so
-// that the next signal level takes affect right after the ADC reading In normal
-// run mode, we want to increment the angle and write the next PWM values
-
-
-void hyperLoop(MESC_motor_typedef *_motor) {
-//Empty now, merged into fastloop with new dual interrupt routine
-}
 
 #define MAX_ERROR_COUNT 1
 
@@ -1650,6 +1708,7 @@ void MESC_Slow_IRQ_handler(MESC_motor_typedef *_motor){
 
 float  Square(float x){ return((x)*(x));}
 
+//SC Slowloop
   void slowLoop(MESC_motor_typedef *_motor) {
 // In this loop, we will fetch the throttle values, and run functions that
 // are critical, but do not need to be executed very often e.g. adjustment
@@ -1677,22 +1736,50 @@ float  Square(float x){ return((x)*(x));}
 	  switch(_motor->ControlMode){
 		  case MOTOR_CONTROL_MODE_TORQUE:
 
+
 //		  tle5012(_motor);
 //			  _motor->FOC.enc_angle = (uint16_t)(_motor->pos.tle5012_pos << 1) * _motor->m.pole_pairs;; // *2
 //			  UpdatePositionMultiTurn(_motor, _motor->FOC.enc_angle);
 //			  encoder_pll_run(_motor);
 //Dealt with in APP_NONE
+
+//			  if( _motor->FOC.last_control_mode != MOTOR_CONTROL_MODE_TORQUE)
+//
+//			  				{
+//				  PLL_ReinitToEncoder(_motor);
+//				 					 _motor->position_ctrl.pos_target = _motor->position_ctrl.pos_abs;
+//				 					 _motor->position_ctrl.enc_last = _motor->pos.tle5012_pos;
+//				 //					 _motor->tuning.current_sample=0;
+//				 					 _motor->position_ctrl.vel_sp =0;
+//				 //					 _motor->position_ctrl.can_log_on=1;
+//			  				}
+
 			  break;
 
-			  //SC Speed and Position control
+			  //SC slow-loop  Speed and Position control
 		  case MOTOR_CONTROL_MODE_POSITION:
+			  if( _motor->FOC.last_control_mode != MOTOR_CONTROL_MODE_POSITION)
+
+				{
+					 PLL_ReinitToEncoder(_motor);
+					 _motor->position_ctrl.pos_target = _motor->position_ctrl.pos_abs;
+					 _motor->position_ctrl.enc_last = _motor->pos.tle5012_pos;
+//					 _motor->tuning.current_sample=0;
+					 _motor->position_ctrl.vel_sp =0;
+//					 _motor->position_ctrl.can_log_on=1;
+
+				}
 
 			  //RunPosControl(_motor);
 			  //5ms for slowloop
-			  PositionTrajectoryStep(_motor,0.005f);
-			  RunSpeedControl(_motor);
+			  PositionConstSpeedTest(_motor);
+			  //PositionTrajectoryStep(_motor,0.0005f);
+			  //logTuning(_motor);
+			  //RunSpeedControl(_motor);
+
 			  break;
 		  case MOTOR_CONTROL_MODE_SPEED:
+
 //
 //			  	tle5012(_motor);
 			  if (_motor->MotorSensorMode==MOTOR_SENSOR_MODE_ABSOLUTE_ENCODER){
@@ -1708,6 +1795,18 @@ float  Square(float x){ return((x)*(x));}
 
 			   }
 
+
+
+			  //TBC PID loop to convert eHz feedback to an iq request
+//			  if( _motor->FOC.last_control_mode != MOTOR_CONTROL_MODE_SPEED)
+//				{
+//					 PLL_ReinitToEncoder(_motor);
+////					 _motor->tuning.current_sample=0;
+////					 _motor->position_ctrl.can_log_on=1;
+//
+//				}
+			  //logTuning(_motor);
+			  //tle5012(_motor);
 
 			  RunSpeedControl(_motor);
 			  break;
@@ -1769,7 +1868,15 @@ float  Square(float x){ return((x)*(x));}
 		  default:
 			  __NOP();
 			  break;
+
+
 	  }
+	  //save the current control mode
+	  // turn off CAN logging
+//	  if ((_motor->ControlMode !=MOTOR_CONTROL_MODE_SPEED )&& ( _motor->ControlMode != MOTOR_CONTROL_MODE_POSITION))
+//			  _motor->position_ctrl.can_log_on = 0;
+
+	 _motor->FOC.last_control_mode = _motor->ControlMode;
 	  /////////////////Handle the safe startup
 	  safeStart(_motor);
 	  /////////////////Handle the keybits (initialised flag, killswitch and safestart)
@@ -2155,6 +2262,8 @@ void getIncEncAngle(MESC_motor_typedef *_motor){
 	}
 }
 
+
+// SC -logvars
 void  logVars(MESC_motor_typedef *_motor){
 
 	_motor->logging.Vbus[_motor->logging.current_sample] = _motor->Conv.Vbus;
@@ -2173,6 +2282,36 @@ void  logVars(MESC_motor_typedef *_motor){
 		_motor->logging.current_sample = 0;
 	}
 }
+
+//SC Log for tuning
+//void  logTuning(MESC_motor_typedef *_motor){
+////
+////	_motor->tuning.tle5012_angle[_motor->tuning.current_sample]= _motor->pos.tle5012_pos;
+////	_motor->tuning.abs_pos[_motor->tuning.current_sample]= _motor->position_ctrl.pos_abs;
+////	_motor->tuning.enc_angle[_motor->tuning.current_sample]= _motor->FOC.enc_angle;
+////	_motor->tuning.pos_error[_motor->tuning.current_sample]= _motor->position_ctrl.pos_error;
+////	_motor->tuning.pll_est_theta[_motor->tuning.current_sample]= _motor->encoder_pll.theta_est;
+////	_motor->tuning.set_speed[_motor->tuning.current_sample]= _motor->position_ctrl.vel_sp;
+////	_motor->tuning.speed_req[_motor->tuning.current_sample]= _motor->FOC.speed_req;
+////	_motor->tuning.Idq_prereq_q[_motor->tuning.current_sample] =  _motor->FOC.Idq_prereq.q;
+//
+//		// test data
+//	    _motor->tuning.tle5012_angle[_motor->tuning.current_sample]= test_int;
+//		_motor->tuning.abs_pos[_motor->tuning.current_sample]= test_int;
+//		_motor->tuning.enc_angle[_motor->tuning.current_sample]= test_int;
+//		_motor->tuning.pos_error[_motor->tuning.current_sample]= test_int;
+//		_motor->tuning.pll_est_theta[_motor->tuning.current_sample]= test_int;
+//		_motor->tuning.set_speed[_motor->tuning.current_sample]= test_int++;
+//		_motor->tuning.speed_req[_motor->tuning.current_sample]= test_float;
+//		_motor->tuning.Idq_prereq_q[_motor->tuning.current_sample] =  test_float++;
+//
+//	_motor->tuning.current_sample++;
+//	if(_motor->tuning.current_sample>=TUNELENGTH){
+//		_motor->tuning.current_sample = 0;
+//		test_float=0;
+//		test_int=0;
+//	}
+//}
 
 
 

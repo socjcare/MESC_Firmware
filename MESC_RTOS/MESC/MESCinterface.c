@@ -526,7 +526,11 @@ void populate_vars(){
 	TERM_addVar(mtr[0].FOC.speed_req				, -5000.0f	, 5000.0f	, "speed_req"	, "Hz"																						, VAR_ACCESS_RW	, callback	, &TERM_varList);
 	TERM_addVar(mtr[0].FOC.Idq_req.q 		, -4096.0f 	, 4096.0f  	, "iqreq" 		, "mtr[0].FOC.Idq_req.q"     																, VAR_ACCESS_TR , NULL      , &TERM_varList);
 	TERM_addVar(mtr[0].FOC.Idq_smoothed.q 	, -HUGE_VAL , HUGE_VAL  , "iq"      	, "Phase Idq_q smoothed"                   													, VAR_ACCESS_TR , NULL      , &TERM_varList);
+
 	TERM_addVar(mtr[0].MotorSensorMode 	, 0 , 3 , "sensor mode"      	, "0 - sensorless 3- absolute encode"                   													, VAR_ACCESS_RW , callback      , &TERM_varList);
+
+
+	TERM_addVar(mtr[0].	MotorSensorMode		, 0	, 5	, "sensor_mode"	, "0=sensorless 3=absolute encoder"																						, VAR_ACCESS_RW	, callback	, &TERM_varList);
 
 
 
@@ -539,18 +543,54 @@ void populate_vars(){
 	TERM_addVar(mtr[0].input_vars.remote_ADC_can_id	, 0			, 254		, "can_adc"	    , "CAN ADC ID  0=disabled"																	, VAR_ACCESS_RW	, callback	, &TERM_varList);
 #endif
 
-	TermVariableDescriptor * desc;
-	desc = TERM_addVar(mtr[0].Conv.Vbus         	, 0.0f      , HUGE_VAL  , "vbus"        , "Read input voltage"                  													, VAR_ACCESS_TR , NULL      , &TERM_varList);
-	TERM_setFlag(desc, FLAG_TELEMETRY_ON);
-
-	desc = TERM_addVar(mtr[0].FOC.eHz           	, -HUGE_VAL , HUGE_VAL  , "ehz"         , "Motor electrical hz"                 													, VAR_ACCESS_TR , NULL      , &TERM_varList);
-	TERM_setFlag(desc, FLAG_TELEMETRY_ON);
-
-	desc = TERM_addVar(mtr[0].FOC.Idq_smoothed.d 	, -HUGE_VAL , HUGE_VAL  , "id"      	, "Phase Idq_d smoothed"                   													, VAR_ACCESS_TR , NULL      , &TERM_varList);
-	TERM_setFlag(desc, FLAG_TELEMETRY_ON);
-
-//	desc = TERM_addVar(mtr[0].FOC.Idq_smoothed.q 	, -HUGE_VAL , HUGE_VAL  , "iq"      	, "Phase Idq_q smoothed"                   													, VAR_ACCESS_TR , NULL      , &TERM_varList);
+//	TermVariableDescriptor * desc;
+//	desc = TERM_addVar(mtr[0].Conv.Vbus         	, 0.0f      , HUGE_VAL  , "vbus"        , "Read input voltage"                  													, VAR_ACCESS_TR , NULL      , &TERM_varList);
 //	TERM_setFlag(desc, FLAG_TELEMETRY_ON);
+//
+//	desc = TERM_addVar(mtr[0].FOC.eHz           	, -HUGE_VAL , HUGE_VAL  , "ehz"         , "Motor electrical hz"                 													, VAR_ACCESS_TR , NULL      , &TERM_varList);
+//	TERM_setFlag(desc, FLAG_TELEMETRY_ON);
+//
+//	desc = TERM_addVar(mtr[0].FOC.Idq_smoothed.d 	, -HUGE_VAL , HUGE_VAL  , "id"      	, "Phase Idq_d smoothed"                   													, VAR_ACCESS_TR , NULL      , &TERM_varList);
+//	TERM_setFlag(desc, FLAG_TELEMETRY_ON);
+//
+////	desc = TERM_addVar(mtr[0].FOC.Idq_smoothed.q 	, -HUGE_VAL , HUGE_VAL  , "iq"      	, "Phase Idq_q smoothed"                   													, VAR_ACCESS_TR , NULL      , &TERM_varList);
+////	TERM_setFlag(desc, FLAG_TELEMETRY_ON);
+//
+//	desc = TERM_addVar(mtr[0].Raw.ADC_in_ext1    	, 0			, 4096      , "adc1"   		, "Raw ADC throttle"                    													, VAR_ACCESS_TR , NULL      , &TERM_varList);
+//	TERM_setFlag(desc, FLAG_TELEMETRY_ON);
+//
+//	desc = TERM_addVar(mtr[0].Conv.MOSu_T        	, 0.0f		, 4096.0f   , "TMOS"   		, "MOSFET temp, kelvin"                     												, VAR_ACCESS_TR , NULL      , &TERM_varList);
+//	TERM_setFlag(desc, FLAG_TELEMETRY_ON);
+//
+//	desc = TERM_addVar(mtr[0].Conv.Motor_T       	, 0.0f 		, 4096.0f   , "TMOT"   		, "Motor temp, kelvin"                      												, VAR_ACCESS_TR , NULL      , &TERM_varList);
+//	TERM_setFlag(desc, FLAG_TELEMETRY_ON);
+//
+//	desc = TERM_addVar(MESC_errors          		, -HUGE_VAL , HUGE_VAL  , "error" 		, "System errors now"       																, VAR_ACCESS_TR , NULL		, &TERM_varList);
+//	TERM_setFlag(desc, FLAG_TELEMETRY_ON);
+//
+//	desc = TERM_addVar(mtr[0].FOC.Vdq.q     		, -4096.0f 	, 4096.0f  	, "Vq"    		, "FOC_Vdq_q"     																			, VAR_ACCESS_TR , NULL      , &TERM_varList);
+//	TERM_setFlag(desc, FLAG_TELEMETRY_ON);
+//
+//	desc = TERM_addVar(mtr[0].FOC.Vdq.d     		, -4096.0f 	, 4096.0f  	, "Vd"    		, "FOC_Vdq_d"     																			, VAR_ACCESS_TR , NULL      , &TERM_varList);
+//	TERM_setFlag(desc, FLAG_TELEMETRY_ON);
+//
+////	desc = TERM_addVar(mtr[0].FOC.Idq_req.q 		, -4096.0f 	, 4096.0f  	, "iqreq" 		, "mtr[0].FOC.Idq_req.q"     																, VAR_ACCESS_TR , NULL      , &TERM_varList);
+////	TERM_setFlag(desc, FLAG_TELEMETRY_ON);
+
+	TermVariableDescriptor * desc;
+//	| Variable							                   | MIN		| MAX		| NAME			   | DESCRIPTION									| RW			| CALLBACK	| VAR LIST HANDLE
+		desc = TERM_addVar(mtr[0].pos.tle5012_pos          ,-65536   ,65536     ,"tle5012_pos", "16-bit encoder position"  , VAR_ACCESS_TR , NULL      , &TERM_varList);
+		TERM_setFlag(desc, FLAG_TELEMETRY_ON);
+
+		desc = TERM_addVar(mtr[0].position_ctrl.pos_abs    ,-HUGE_VAL    , HUGE_VAL   , "pos_abs"    , "absolute position in encoder counts" , VAR_ACCESS_TR , NULL      , &TERM_varList);
+		TERM_setFlag(desc, FLAG_TELEMETRY_ON);
+
+		desc = TERM_addVar(mtr[0].FOC.enc_angle 	       , -HUGE_VAL   ,HUGE_VAL   , "enc_angle"   , "encoder electrical angle"  , VAR_ACCESS_TR , NULL      , &TERM_varList);
+		TERM_setFlag(desc, FLAG_TELEMETRY_ON);
+
+		desc = TERM_addVar(mtr[0].position_ctrl.pos_error 	, -HUGE_VAL   , HUGE_VAL    ,"position_error"  ,"position error from target", VAR_ACCESS_TR , NULL      , &TERM_varList);
+		TERM_setFlag(desc, FLAG_TELEMETRY_ON);
+
 
 //	desc = TERM_addVar(mtr[0].Raw.ADC_in_ext1    	, 0			, 4096      , "adc1"   		, "Raw ADC throttle"                    													, VAR_ACCESS_TR , NULL      , &TERM_varList);
 //	TERM_setFlag(desc, FLAG_TELEMETRY_ON);
@@ -570,8 +610,23 @@ void populate_vars(){
 //	desc = TERM_addVar(mtr[0].FOC.Vdq.d     		, -4096.0f 	, 4096.0f  	, "Vd"    		, "FOC_Vdq_d"     																			, VAR_ACCESS_TR , NULL      , &TERM_varList);
 //	TERM_setFlag(desc, FLAG_TELEMETRY_ON);
 
-//	desc = TERM_addVar(mtr[0].FOC.Idq_req.q 		, -4096.0f 	, 4096.0f  	, "iqreq" 		, "mtr[0].FOC.Idq_req.q"     																, VAR_ACCESS_TR , NULL      , &TERM_varList);
-//	TERM_setFlag(desc, FLAG_TELEMETRY_ON);
+		desc = TERM_addVar(mtr[0].encoder_pll.theta_est      , -1000.0f		,1000.0f    , "pll_est_theta"   ,"PLL estimated velocity from encoder" , VAR_ACCESS_TR , NULL      , &TERM_varList);
+		TERM_setFlag(desc, FLAG_TELEMETRY_ON);
+
+		desc = TERM_addVar(mtr[0].position_ctrl.vel_sp       , -1000.0f 	, 1000.0f    , "vel_sp"   		,"velocity setpoint from trajectory" , VAR_ACCESS_TR , NULL      , &TERM_varList);
+		TERM_setFlag(desc, FLAG_TELEMETRY_ON);
+
+		desc = TERM_addVar(mtr[0].FOC.speed_req         	 , -1000        , 1000        , "speed_req" 	, "Actual speed request, ehz" , VAR_ACCESS_RW , NULL		, &TERM_varList);
+		TERM_setFlag(desc, FLAG_TELEMETRY_ON);
+
+		desc = TERM_addVar(mtr[0].FOC.Idq_prereq.q    		 , -4096.0f 	 , 4096.0f  	, "Idq_q request"  , "Idq q current request" , VAR_ACCESS_TR , NULL      , &TERM_varList);
+		TERM_setFlag(desc, FLAG_TELEMETRY_ON);
+
+		desc = TERM_addVar(mtr[0].FOC.Vdq.d     		     ,-4096.0f 	      , 4096.0f  	, "Vd"    		, "FOC_Vdq_d" , VAR_ACCESS_TR , NULL      , &TERM_varList);
+		TERM_setFlag(desc, FLAG_TELEMETRY_ON);
+
+
+
 
 
 		desc = TERM_addVar(mtr[0].pos.tle5012_pos 		, 0 	, 67000  	, "tle5012_count" 		, "mtr[0].pos.tle5012_pos"     																, VAR_ACCESS_TR , NULL      , &TERM_varList);
@@ -602,12 +657,16 @@ void TASK_CAN_packet_cb(TASK_CAN_handle * handle, uint32_t id, uint8_t sender, u
 			}
 			break;
 		}
+		//SC CaN - what to send
 		case CAN_ID_SAMPLE_NOW:
 			motor_curr->logging.sample_no_auto_send = true;
 			motor_curr->logging.sample_now = true;
+//			motor_curr->tuning.sample_no_auto_send = true;
+//			motor_curr->tuning.sample_now = true;
 			break;
 		case CAN_ID_SAMPLE_SEND:
-			motor_curr->logging.sample_no_auto_send = false;
+//			motor_curr->tuning.sample_no_auto_send = false;
+//			motor_curr->tuning.sample_no_auto_send = false;
 			break;
 		case CAN_ID_ADC1_2_REQ:{
 			if(sender == motor_curr->input_vars.remote_ADC_can_id && motor_curr->input_vars.remote_ADC_can_id > 0){
@@ -671,8 +730,29 @@ void TASK_CAN_telemetry_slow(TASK_CAN_handle * handle){
 }
 
 
+
+
+
+//
+//void TASK_CAN_telemetry_tune(TASK_CAN_handle * handle){
+//
+//	MESC_motor_typedef * motor = &mtr[0];
+//	if (motor->position_ctrl.can_log_on){
+//
+//		TASK_CAN_add_uint32(handle	, CAN_ID_POS_INFO     	, CAN_BROADCAST, motor->position_ctrl.pos_abs			, motor->position_ctrl.pos_error	, 0);
+//		TASK_CAN_add_float(handle	, CAN_ID_SPEED_TUNE		, CAN_BROADCAST, motor->FOC.speed_req					, motor->position_ctrl.vel_sp				, 0);
+//		TASK_CAN_add_float(handle	, CAN_ID_PLL_INFO 		, CAN_BROADCAST, motor->tuning.pll_est_theta			, 0	, 0);
+//		TASK_CAN_add_uint16(handle	, CAN_ID_ENCODER  		, CAN_BROADCAST, (motor->pos.tle5012_pos<<1)			,0	,0	, 0							, 0);
+//		//TASK_CAN_add_uint32(handle	, CAN_ID_ENCODER  		, CAN_BROADCAST, (uint32_t)(motor->pos.tle5012_pos<<1)			, 0							, 0);
+//		TASK_CAN_add_float(handle	, CAN_ID_CURRENT_TUNE 	, CAN_BROADCAST, motor->FOC.Idq_prereq.q				, 0							, 0);
+//	}
+//
+//}
+
+
 #define POST_ERROR_SAMPLES 		LOGLENGTH/2
 
+//SC Can telemetru
 void TASK_CAN_aux_data(TASK_CAN_handle * handle){
 	static int samples_sent=-1;
 	static int current_pos=0;
@@ -699,6 +779,7 @@ void TASK_CAN_aux_data(TASK_CAN_handle * handle){
 		TASK_CAN_add_sample(handle, CAN_ID_SAMPLE, 0, samples_sent, 6, 0, motor_curr->logging.Vq[current_pos], 100);
 		TASK_CAN_add_sample(handle, CAN_ID_SAMPLE, 0, samples_sent, 7, 0, motor_curr->logging.angle[current_pos], 100);
 
+
 		samples_sent++;
 		current_pos++;
 		if(current_pos == LOGLENGTH){
@@ -718,8 +799,60 @@ void TASK_CAN_aux_data(TASK_CAN_handle * handle){
 	}
 
 }
-#endif
 
+//SC TASK_CAN_tuning_data
+//void TASK_CAN_tuning_data(TASK_CAN_handle * handle){
+//	static int samples_sent=-1;
+//	static int current_pos=0;
+//	static float timestamp;
+//
+//	MESC_motor_typedef * motor_curr = &mtr[0];
+//    // tuning.sample_no_auto_send  is set to false ( means to send)   when a CAN_ID_SAMPLE_SEND is  received
+//	//  tuning. print_samples_now
+//
+//	//if(motor_curr->tuning.print_samples_now && motor_curr->tuning.sample_no_auto_send == false){
+//	if((motor_curr->tuning.sample_no_auto_send == false) && (motor_curr->ControlMode==MOTOR_CONTROL_MODE_SPEED)){
+//		if(samples_sent == -1){
+//			current_pos = motor_curr->tuning.current_sample;
+//			TASK_CAN_add_sample(handle, CAN_ID_TUNING, 0, 0, 0, CAN_SAMPLE_FLAG_START, (float)LOGLENGTH, 100);
+//			samples_sent=0;
+//			timestamp = motor_curr->FOC.pwm_period * (float)POST_ERROR_SAMPLES * -1.0f;
+//			return;
+//		}
+//
+//		timestamp += motor_curr->FOC.pwm_period;
+//
+//		TASK_CAN_add_sample(handle, CAN_ID_TUNING, 0, samples_sent, 0, 0, timestamp, 100);
+//		TASK_CAN_add_sample(handle, CAN_ID_TUNING, 0, samples_sent, 1, 0, motor_curr->tuning.tle5012_angle[current_pos], 100);
+//		TASK_CAN_add_sample(handle, CAN_ID_TUNING, 0, samples_sent, 2, 0, motor_curr->tuning.abs_pos[current_pos], 100);
+//		TASK_CAN_add_sample(handle, CAN_ID_TUNING, 0, samples_sent, 3, 0, motor_curr->tuning.enc_angle[current_pos], 100);
+//		TASK_CAN_add_sample(handle, CAN_ID_TUNING, 0, samples_sent, 4, 0, motor_curr->tuning.pos_error[current_pos], 100);
+//		TASK_CAN_add_sample(handle, CAN_ID_TUNING, 0, samples_sent, 5, 0, motor_curr->tuning.pll_est_theta[current_pos], 100);
+//		TASK_CAN_add_sample(handle, CAN_ID_TUNING, 0, samples_sent, 6, 0, motor_curr->tuning.set_speed[current_pos], 100);
+//		TASK_CAN_add_sample(handle, CAN_ID_TUNING, 0, samples_sent, 7, 0, motor_curr->tuning.speed_req[current_pos], 100);
+//
+//
+//		samples_sent++;
+//		current_pos++;
+//		if(current_pos == LOGLENGTH){
+//			current_pos = 0;
+//		}
+//		if(samples_sent == LOGLENGTH){
+//			timestamp = 0;
+//			samples_sent = -2;
+//			motor_curr->tuning.print_samples_now = 0;  // SC CAN stop sending tuning data
+//			motor_curr->tuning.lognow = 1;
+//			return;
+//		}
+//	}
+//	if(samples_sent == -2){
+//		samples_sent = -1;
+//		TASK_CAN_add_sample(handle, CAN_ID_SAMPLE, 0, 0, 0, CAN_SAMPLE_FLAG_END, 0.0f, 100);
+//	}
+//
+//}
+
+#endif
 
 void MESCinterface_init(TERMINAL_HANDLE * handle){
 	static bool is_init=false;

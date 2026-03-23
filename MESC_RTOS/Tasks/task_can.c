@@ -369,18 +369,29 @@ void TASK_CAN_telemetry(void * argument){
 	port_str * port = argument;
 	TASK_CAN_handle * handle = port->hw;
 	while(1){
-
+//
 		if(count % 10 == 0){
+
 			//TASK_CAN_telemetry_fast(handle);
 			TASK_CAN_telemetry_tune(handle);
+
+			TASK_CAN_telemetry_fast(handle);
+			TASK_CAN_telemetry_tune(handle);
+//			TASK_CAN_tuning_data(handle);
+
 		}
 		if(count==100){
 			TASK_CAN_telemetry_slow(handle);
+//			TASK_CAN_tuning_data(handle);
 			count=0;
 		}
 
+		//SC CAN telemetry call
 		count++;
-		TASK_CAN_aux_data(handle);
+		//TASK_CAN_aux_data(handle);
+//		TASK_CAN_tuning_data(handle);
+
+
 
 		vTaskDelay(pdMS_TO_TICKS(10));
 	}
