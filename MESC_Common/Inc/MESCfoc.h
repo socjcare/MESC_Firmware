@@ -46,9 +46,6 @@
 //#include "MESCposition.h"
 #define LOGGING
 
-//added SC
-#define TUNING
-
 #define FOC_PERIODS                (1)
 
 //Default options which can be overwritten by user
@@ -194,9 +191,9 @@
 #define SPEED_LOOP_HZ (FAST_HZ / SPD_DECIM)   // 2000 Hz
 #define SPEED_DT      (1.0f / SPEED_LOOP_HZ)  // 0.0005f
 
-
 #define TEST_SPEED_EHZ   40.0f   // constant test speed (above stiction)
 #define POS_EPS_COUNTS  50       // acceptable stop window (~0.3 deg mech)
+
 
 //end add
 
@@ -484,8 +481,7 @@ typedef struct {
   float IIR[2];
   uint32_t cycles_fastloop;
   uint32_t cycles_pwmloop;
-  //SC
-  uint8_t last_control_mode; //
+  uint16_t last_control_mode;
 } MESCfoc_s;
 
 extern MESCfoc_s foc_vars;
@@ -608,12 +604,7 @@ typedef struct{
 
 //Logging
 #ifndef LOGLENGTH
-#define LOGLENGTH 0
-#endif
-
-//SC LOGLENGTH
-#ifndef TUNELENGTH
-#define TUNELENGTH 300
+#define LOGLENGTH 300
 #endif
 //We want to log primarily Ia Ib Ic, Vd,Vq, phase angle, which gives us a complete picture of the machine state
 //4 bytes per variable*6 variables*1000 = 24000bytes. Lowest spec target is F303CB with 48kB SRAM, so this is OK
@@ -633,33 +624,6 @@ typedef struct {
 	bool print_samples_now;
 	bool lognow;
 } MESClogging_s;
-
-
-// ~4 bytes per variable*8 variables*1000 = 32000bytes. For sTM32F405, that's about 112K SRAM, so
-// TUNINGLENGTH of 1000 is OK
-// log for tuning, troubleshooting of position control
-typedef struct {
-//	uint32_t abs_pos[TUNELENGTH]; // absolute position, counts
-//	uint16_t enc_angle[TUNELENGTH]; // encoder angle, electrical
-//	uint16_t tle5012_angle[TUNELENGTH]; // raw encoder angle
-//	uint32_t pos_error[TUNELENGTH]; // position_error
-//	float pll_est_theta[TUNELENGTH]; //estimate of pll_theta
-//	float set_speed[TUNELENGTH];  //set speed from trajectory
-//	float speed_req[TUNELENGTH];  //actual speed_request
-//    float Idq_prereq_q[TUNELENGTH]; //requested current
-
-		uint32_t abs_pos; // absolute position, counts
-		uint16_t enc_angle; // encoder angle, electrical
-		uint32_t pos_error; // position_error
-		float pll_est_theta; //estimate of pll_theta
-		float set_speed;  //set speed from trajectory
-		float speed_req;  //actual speed_reques
-//	uint32_t current_sample;
-//	bool sample_now;
-//	bool sample_no_auto_send;
-//	bool print_samples_now;
-//	bool lognow;
-} MESCtuning_s;
 
 typedef struct {
 
@@ -868,12 +832,10 @@ typedef struct {
     uint8_t enc_delta;   //maximum change  in tle5012 encoder to consider as valid
     uint8_t sensor_mode;  // for testing
     uint32_t enc_angle;
-    uint16_t error_count;
-    uint16_t missed_count;
-    uint16_t max_step_count;
+	uint16_t error_count;
+	uint16_t missed_count;
+	uint16_t max_step_count;
 
-
-    bool can_log_on;   //flag to turn on CAN tuning output
 
 } pos_ctrl_t;
 
@@ -918,8 +880,6 @@ typedef struct{
 	speed_ctrl_state_t speed_ctrl_state;  //state of speed control
 	speed_ctrl_limits_t speed_ctrl_limits;  // applicable limits for speed control
 	pos_ctrl_t position_ctrl;
-	MESCtuning_s tuning;		//tuning parameters
-
 }MESC_motor_typedef;
 
 extern MESC_motor_typedef mtr[NUM_MOTORS];
@@ -1018,7 +978,6 @@ void tle5012(MESC_motor_typedef *_motor);
 void HallFluxMonitor(MESC_motor_typedef *_motor);
 void getIncEncAngle(MESC_motor_typedef *_motor);
 void logVars(MESC_motor_typedef *_motor);
-void logTuning(MESC_motor_typedef *_motor);
 void printSamples(UART_HandleTypeDef *uart, DMA_HandleTypeDef *dma);
 void RunMTPA(MESC_motor_typedef *_motor);
 void safeStart(MESC_motor_typedef *_motor);

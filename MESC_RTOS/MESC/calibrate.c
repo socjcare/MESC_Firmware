@@ -31,8 +31,8 @@
 
 
 #include <MESC/calibrate.h>
+#include <MESCfoc.h>
 #include "string.h"
-#include "MESCfoc.h"
 
 #define APP_NAME "calibrate"
 #define APP_DESCRIPTION "Calibrates inputs"

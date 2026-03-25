@@ -25,7 +25,7 @@
 #include "string.h"
 
 #ifdef MESC
-#include "MESCfoc.h"
+#include <MESCfoc.h>
 #endif
 
 #define APP_NAME "top"

@@ -28,8 +28,8 @@
 * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
+#include <MESCfoc.h>
 #include "MESCerror.h"
-#include "MESCfoc.h"
 #include "MESCmotor_state.h"
 #include "MESChw_setup.h"
 #include "MESCpwm.h"

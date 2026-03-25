@@ -34,7 +34,7 @@
 #ifndef INC_MESCMEASURE_H_
 #define INC_MESCMEASURE_H_
 
-#include "MESCfoc.h"
+#include <MESCfoc.h>
 
 void MESCmeasure_RL(MESC_motor_typedef *_motor);
 void MESCmeasure_GetkV(MESC_motor_typedef *_motor);

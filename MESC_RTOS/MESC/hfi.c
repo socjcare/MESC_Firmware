@@ -30,8 +30,8 @@
  ******************************************************************************/
 
 #include <MESC/hfi.h>
+#include <MESCfoc.h>
 #include "string.h"
-#include "MESCfoc.h"
 #include "MESChw_setup.h"
 
 #define APP_NAME "hfi"

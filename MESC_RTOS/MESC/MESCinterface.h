@@ -45,6 +45,7 @@ uint8_t CMD_measure(TERMINAL_HANDLE * handle, uint8_t argCount, char ** args);
 #ifdef HAL_CAN_MODULE_ENABLED
 void TASK_CAN_telemetry_fast(TASK_CAN_handle * handle);
 void TASK_CAN_telemetry_slow(TASK_CAN_handle * handle);
+void TASK_CAN_telemetry_tune(TASK_CAN_handle *handle);
 #endif
 
 #endif /* INC_MESC_INTERFACE_H_ */

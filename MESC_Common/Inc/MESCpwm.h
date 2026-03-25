@@ -34,7 +34,7 @@
 #ifndef INC_MESCPWM_H_
 #define INC_MESCPWM_H_
 
-#include "MESCfoc.h"
+#include <MESCfoc.h>
 
 void MESC_PWM_IRQ_handler(MESC_motor_typedef *_motor); 	//Put this into the PWM interrupt,
 void MESCpwm_Write(MESC_motor_typedef *_motor);  		// Offset the PWM to voltage centred (0Vduty is 50% PWM) or

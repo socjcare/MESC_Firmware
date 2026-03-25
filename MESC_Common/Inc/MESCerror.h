@@ -31,8 +31,8 @@
 #define INC_MESCERROR_H_
 
 //Includes
+#include <MESCfoc.h>
 #include "stm32fxxx_hal.h"
-#include "MESCfoc.h"
 
 //Variables
 extern  uint32_t MESC_errors;

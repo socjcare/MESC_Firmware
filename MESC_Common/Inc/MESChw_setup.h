@@ -25,8 +25,8 @@
 #if !defined(MESChw_setup_H)
 #define MESChw_setup_H
 
+#include <MESCfoc.h>
 #include "stm32fxxx_hal.h"
-#include "MESCfoc.h"
 
 
 #define FLASH_STORAGE_PAGE 	7

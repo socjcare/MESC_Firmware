@@ -34,7 +34,7 @@
 #ifndef INC_MESCHFI_H_
 #define INC_MESCHFI_H_
 
-#include "MESCfoc.h"
+#include <MESCfoc.h>
 
 void MESChfi_Toggle(MESC_motor_typedef *_motor);
 void MESChfi_Slow(MESC_motor_typedef *_motor);

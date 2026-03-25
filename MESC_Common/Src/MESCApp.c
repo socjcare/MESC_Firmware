@@ -35,8 +35,8 @@
  *      Author: David Molony
  */
 
+#include <MESCfoc.h>
 #include "MESCApp.h"
-#include "MESCfoc.h"
 #include "MESCmotor_state.h"
 #include "MESCerror.h"
 #include "stm32fxxx_hal.h"

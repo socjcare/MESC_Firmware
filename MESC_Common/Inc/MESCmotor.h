@@ -31,7 +31,7 @@
 #define MESC_MOTOR_H
 
 #include <inttypes.h>
-#include "MESCfoc.h"
+#include <MESCfoc.h>
 
 void motor_init( MESC_motor_typedef * motor );
 

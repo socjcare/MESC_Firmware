@@ -22,9 +22,9 @@
  *      Author: David Molony
  */
 /* Includes ------------------------------------------------------------------*/
+#include <MESCfoc.h>
 #include "MESChw_setup.h"
 
-#include "MESCfoc.h"
 #include "MESCpwm.h"
 
 extern ADC_HandleTypeDef hadc1;

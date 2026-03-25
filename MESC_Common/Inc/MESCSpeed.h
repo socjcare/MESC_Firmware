@@ -8,7 +8,7 @@
 
 #ifndef MESC_SPEED_H
 #define MESC_SPEED_H
-#include "MESCfoc.h"
+#include <MESCfoc.h>
 
 
 

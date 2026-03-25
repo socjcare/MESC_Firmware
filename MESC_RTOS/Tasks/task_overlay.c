@@ -56,7 +56,7 @@
 /* `#START USER_INCLUDE SECTION` */
 #include "TTerm/Core/include/TTerm.h"
 #ifdef MESC
-#include "MESCfoc.h"
+#include <MESCfoc.h>
 #include "MESCmotor_state.h"
 #endif
 

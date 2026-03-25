@@ -22,9 +22,9 @@
  *      Author: David Molony
  */
 
+#include <MESCfoc.h>
 #include "MESCBLDC.h"
 
-#include "MESCfoc.h"
 #include "MESCpwm.h"
 #include "MESChw_setup.h"
 #include "MESCmotor_state.h"

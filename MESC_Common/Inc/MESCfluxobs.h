@@ -34,7 +34,7 @@
 #ifndef INC_MESCFLUXOBS_H_
 #define INC_MESCFLUXOBS_H_
 
-#include "MESCfoc.h"
+#include <MESCfoc.h>
 
 void MESCfluxobs_run(MESC_motor_typedef *_motor);
 void MESCfluxobs_v2_run(MESC_motor_typedef *_motor);

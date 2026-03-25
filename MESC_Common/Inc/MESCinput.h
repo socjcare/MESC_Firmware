@@ -34,7 +34,7 @@
 #ifndef INC_MESCINPUT_H_
 #define INC_MESCINPUT_H_
 
-#include "MESCfoc.h"
+#include <MESCfoc.h>
 
 void MESCinput_Init(MESC_motor_typedef *_motor);
 int MESCinput_isHandbrake();
