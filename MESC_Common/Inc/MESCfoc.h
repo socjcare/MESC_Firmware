@@ -835,6 +835,7 @@ typedef struct {
 	uint16_t error_count;
 	uint16_t missed_count;
 	uint16_t max_step_count;
+	uint16_t rms_error;
 
 
 } pos_ctrl_t;

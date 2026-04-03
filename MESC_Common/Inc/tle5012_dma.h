@@ -1,5 +1,6 @@
 #include "stm32fxxx_hal.h"
 #include "stdbool.h"
+#include "MESCFoc.h"
 
 
 
@@ -34,7 +35,7 @@ extern volatile tle_pkt_t pkt;
 
 
 extern SPI_HandleTypeDef hspi3;
-
+bool read_encoder_angle (MESC_motor_typedef *_motor);
 bool tle_read_start_dma(void);
 //volatile uint16_t tle_angle_latest = 0;   // 0..65535 mapped
 //volatile uint8_t  tle_busy = 0;           // 0 idle, 1 transfer running

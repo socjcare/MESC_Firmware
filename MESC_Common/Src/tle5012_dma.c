@@ -1,6 +1,10 @@
 #include "tle5012_dma.h"
+//#include "MESCFoc.h"
 
 
+#define ENC_DECIMATION        20
+#define TLE_SAFETY_MASK       0x7000
+#define TLE_ANGLE_MASK        0x7FFF
 
 uint16_t reg_word;
 
@@ -10,10 +14,56 @@ volatile tle_state_t tle_state =TLE_IDLE;
 
 //volatile uint16_t tle_angle_latest = 0;   // 0..65535 mapped
 
-
+static inline int16_t angle_error(int16_t a, int16_t b)
+{
+    int16_t e = a - b;
+    if (e >  32768) e -= 65536;
+    if (e < -32768) e += 65536;
+    return e;
+}
 static inline void CS_L(void){ HAL_GPIO_WritePin(GPIOC, GPIO_PIN_11, GPIO_PIN_RESET); }
 static inline void CS_H(void){ HAL_GPIO_WritePin(GPIOC, GPIO_PIN_11, GPIO_PIN_SET); }
 
+/* returns true if measurement is ready */
+bool read_encoder_angle (MESC_motor_typedef *_motor)
+
+{
+	uint16_t angle;
+
+	  if (++_motor->position_ctrl.pos_decim>= ENC_DECIMATION) {
+		_motor->position_ctrl.pos_decim = 0;
+
+		if (tle_state == TLE_IDLE && hspi3.State == HAL_SPI_STATE_READY) {
+			tle_read_start_dma();   // kicks TX DMA, returns immediately
+			return false;
+		}
+	}
+	if (tle_state == TLE_DONE) {
+		 tle_state = TLE_IDLE;
+		 if (pkt.safety & TLE_SAFETY_MASK){ // check the safety word bits 114/13/12
+			 angle = (pkt.angle & TLE_ANGLE_MASK)<<1;  //mask and make it 16-bit
+			 if ( abs(angle_error(_motor->position_ctrl.enc_last,angle)) < _motor->position_ctrl.max_step_count){
+			 _motor->pos.tle5012_pos =angle;
+			 if (_motor->position_ctrl.missed_count> 0)// for now just record keeping
+				 _motor->position_ctrl.missed_count=0; // in future , used # of missed counts to estimate encoder position
+			 return true;
+			 }
+		 }
+		 else // bad reading, based on SAFETY MASK
+		 {
+			_motor->position_ctrl.error_count++;
+			_motor->position_ctrl.missed_count++;
+			return false;
+		 }
+	}
+	if (tle_state == TLE_ERR) {
+		  tle_recover_spi_dma();
+		  return false;
+	}
+
+	return false;
+
+}
 bool tle_read_start_dma(void)
 {
     if (tle_state != TLE_IDLE) return false;

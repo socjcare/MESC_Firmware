@@ -32,7 +32,7 @@
 #ifndef CAN_HELPER_H_
 #define CAN_HELPER_H_
 
-#include <Tasks/can_ids.h_orig>
+#include <Tasks/can_ids.h>
 #include "CAN_types.h"
 
 #ifdef HAL_CAN_MODULE_ENABLED

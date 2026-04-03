@@ -88,8 +88,10 @@ TERMINAL_HANDLE * TERM_createNewHandle(TermPrintHandler printFunction, unsigned 
     newHandle->varHandle->varListHead = &TERM_varList;
 	#endif
 
-    sprintf(newHandle->currUserName, "%s%s%s", TERM_getVT100Code(_VT100_FOREGROUND_COLOR, _VT100_BLUE), usr, TERM_getVT100Code(_VT100_RESET_ATTRIB, 0));
+   // sprintf(newHandle->currUserName, "%s%s%s", TERM_getVT100Code(_VT100_FOREGROUND_COLOR, _VT100_BLUE), usr, TERM_getVT100Code(_VT100_RESET_ATTRIB, 0));
     
+    sprintf(newHandle->currUserName, "%s%s" ,usr, TERM_getVT100Code(_VT100_RESET_ATTRIB, 0));
+
     //reset pointers
     newHandle->currEscSeqPos = 0xff;
     
@@ -928,7 +930,8 @@ uint16_t toLowerCase(uint16_t c){
 
 void TERM_Box(TERMINAL_HANDLE * handle, uint8_t row1, uint8_t col1, uint8_t row2, uint8_t col2) {
 	TERM_setCursorPos(handle, row1, col1);
-	TERM_sendVT100Code(handle, _VT100_BACKGROUND_COLOR, _VT100_BLUE);
+	//TERM_sendVT100Code(handle, _VT100_BACKGROUND_COLOR, _VT100_BLUE);
+
 	ttprintf("\xE2\x95\x94"); //edge upper left
 	int i = 0;
 	for (i = 1; i < (col2 - col1); i++) {

@@ -703,15 +703,13 @@ void fastLoop(MESC_motor_typedef *_motor) {
 
 				//SC  - fastloop Absolute enc
 			case MOTOR_SENSOR_MODE_ABSOLUTE_ENCODER:
-						{
-
-				uint16_t angle;
+				{uint16_t angle;
 				  if (++_motor->position_ctrl.pos_decim>= 20) {
-							_motor->position_ctrl.pos_decim = 0;
+					_motor->position_ctrl.pos_decim = 0;
 
-						if (tle_state == TLE_IDLE && hspi3.State == HAL_SPI_STATE_READY) {
-							tle_read_start_dma();   // kicks TX DMA, returns immediately
-						}
+					if (tle_state == TLE_IDLE && hspi3.State == HAL_SPI_STATE_READY) {
+						tle_read_start_dma();   // kicks TX DMA, returns immediately
+					}
 				}
 				if (tle_state == TLE_DONE) {
 					 tle_state = TLE_IDLE;
@@ -728,83 +726,61 @@ void fastLoop(MESC_motor_typedef *_motor) {
 						_motor->position_ctrl.error_count++;
 						_motor->position_ctrl.missed_count++;
 					 }
-					}
-					if (tle_state == TLE_ERR) {
-						  tle_recover_spi_dma();
-					}
+				}
+				if (tle_state == TLE_ERR) {
+					  tle_recover_spi_dma();
+				}
 
 
-					uint32_t mech32 = ((uint32_t)_motor->pos.tle5012_pos) << 16;
+				uint32_t mech32 = ((uint32_t)_motor->pos.tle5012_pos) << 16;
 
-					_motor->position_ctrl.enc_angle =  mech32 * _motor->m.pole_pairs;
-					UpdatePositionMultiTurn(_motor, (uint16_t)(_motor->pos.tle5012_pos));
-					encoder_pll_run(_motor);
+				_motor->position_ctrl.enc_angle =  mech32 * _motor->m.pole_pairs;
+				UpdatePositionMultiTurn(_motor, (uint16_t)(_motor->pos.tle5012_pos));
+				encoder_pll_run(_motor);
 
-					_motor->FOC.FOCAngle =  (int16_t)(_motor->position_ctrl.enc_angle >> 16);
+				_motor->FOC.FOCAngle =  (int16_t)(_motor->position_ctrl.enc_angle >> 16);
 
-						    /* ------------------------------------------------------------
-						     * 3) Outer loops by control mode (DECIMATED)
-						     * ------------------------------------------------------------ */
-						    switch (_motor->ControlMode)
-						    {
-						        /* ========================= TORQUE MODE =========================
-						         * User directly commands torque current (Iq).
-						         * No speed controller used.
-						         */
-						        case MOTOR_CONTROL_MODE_TORQUE:
-						            break;
+				/* ------------------------------------------------------------
+				 * 3) Outer loops by control mode (DECIMATED)
+				 * ------------------------------------------------------------ */
+				switch (_motor->ControlMode)
+				{
+					/* ========================= TORQUE MODE =========================
+					 * User directly commands torque current (Iq).
+					 * No speed controller used.
+					 */
+					case MOTOR_CONTROL_MODE_TORQUE:
+						break;
 
-						        /* ========================= SPEED MODE =========================
-						         * speed_req is set elsewhere (e.g. from UI/CAN)
-						         * Run speed PI at 2kHz.
-						         */
-						        case MOTOR_CONTROL_MODE_SPEED:
+					/* ========================= SPEED MODE =========================
+					 * speed_req is set elsewhere (e.g. from UI/CAN)
+					 * Run speed PI at 2kHz.
+					 */
+					case MOTOR_CONTROL_MODE_SPEED:
 
 //						            if (++_motor->speed_ctrl_limits.speed_decim >= 10U) {         // 20k/10 = 2kHz
 //						                _motor->speed_ctrl_limits.speed_decim = 0U;
 //						                RunModifiedSpeedControl(_motor);      // updates Idq_prereq.q
 //						            }
-						            break;
+						break;
+
+					case MOTOR_CONTROL_MODE_POSITION:
+						break;
+
+					default:
+						break;
+
+				}
 
 
-						        /* ======================== POSITION MODE ========================
-						         * Position loop generates speed_req, speed PI generates Iq.
-						         * - trajectory + position controller at 1kHz
-						         * - speed PI at 2kHz
-						         */
-						        case MOTOR_CONTROL_MODE_POSITION:
-//
-//						            if (++_motor->position_ctrl.pos_decim >= 20U) {         // 20k/20 = 1kHz
-//						                _motor->position_ctrl.pos_decim = 0U;
-//
-//						                PositionTrajectoryStep(_motor, 0.001f);   // updates pos_ctrl.vel_sp
-//						                RunModifiedSpeedControl(_motor);            // sets FOC.speed_req
-//						            }
-//
-//						            if (++_motor->speed_ctrl_limits.speed_decim >= 10U) {         // 2kHz speed PI
-//						                _motor->speed_ctrl_limits.speed_decim = 0U;
-//						                RunModifiedSpeedControl(_motor);
-//						            }
-						            break;
+				/* ------------------------------------------------------------
+				 * 4) Optional flux observer + FOC current loop EVERY tick
+				 * ------------------------------------------------------------ */
+				MESCfluxobs_run(_motor);
+				MESCFOC(_motor);
 
-
-						        default:
-
-						            /* Safe fallback */
-						            // _motor->FOC.Idq_prereq.q = 0.0f;
-						            break;
-
-						    }
-
-
-						    /* ------------------------------------------------------------
-						     * 4) Optional flux observer + FOC current loop EVERY tick
-						     * ------------------------------------------------------------ */
-						    MESCfluxobs_run(_motor);
-						    MESCFOC(_motor);
-
-						    break;
-						}
+				break;
+			}
 
 
 				break;
@@ -896,6 +872,13 @@ void fastLoop(MESC_motor_typedef *_motor) {
       MESCmeasure_GetkV(_motor);
 
       break;
+
+    case MOTOR_STATE_ENCODER_CAL:
+
+    	if (read_encoder_angle(_motor))  // check if good data
+    		MESCmeasure_EncoderCal(_motor);
+
+          break;
 
     case MOTOR_STATE_ERROR:
       MESCpwm_generateBreak(_motor);  // Generate a break state (software disabling all PWM)

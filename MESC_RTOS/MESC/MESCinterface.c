@@ -81,6 +81,7 @@ uint8_t CMD_measure(TERMINAL_HANDLE * handle, uint8_t argCount, char ** args){
 	bool measure_linkage = false;
 	bool measure_hfi = false;
 	bool measure_dt = false;
+	bool encoder_cal = false;
 
 	if(argCount==0){
 		measure_RL = true;
@@ -113,6 +114,9 @@ uint8_t CMD_measure(TERMINAL_HANDLE * handle, uint8_t argCount, char ** args){
 		if(strcmp(args[i], "-d")==0){
 			measure_dt = true;
 		}
+		if(strcmp(args[i], "-e")==0){
+			encoder_cal = true;
+		}
 		if(strcmp(args[i], "-?")==0){
 			ttprintf("Usage: measure [flags]\r\n");
 			ttprintf("Ensure you set the measure current and voltage below the max voltage\r\n");
@@ -124,6 +128,7 @@ uint8_t CMD_measure(TERMINAL_HANDLE * handle, uint8_t argCount, char ** args){
 			ttprintf("\t -d\t Measure deadtime compensation\r\n");
 			ttprintf("\t -c\t Specify openloop current\r\n");
 			ttprintf("\t -v\t Specify HFI voltage\r\n");
+			ttprintf("\t -v\t Measure encoder offset\r\n");
 			return TERM_CMD_EXIT_SUCCESS;
 		}
 		if(strcmp(args[i], "-v")==0){
@@ -369,6 +374,25 @@ uint8_t CMD_measure(TERMINAL_HANDLE * handle, uint8_t argCount, char ** args){
 		ttprintf("Flux linkage = %f mWb\r\n\r\n", (double)(motor_curr->m.flux_linkage * 1000.0f));
 		vTaskDelay(2000);
 	}
+	if(encoder_cal){
+			//Measure encoder offset
+
+			motor_curr->MotorState = MOTOR_STATE_ENCODER_CAL;
+			ttprintf("Measuring encoder offset\r\nWaiting for result");
+
+			while(motor_curr->MotorState == MOTOR_STATE_ENCODER_CAL){
+				xSemaphoreGive(port->term_block);
+				vTaskDelay(200);
+				xQueueSemaphoreTake(port->term_block, portMAX_DELAY);
+				ttprintf(".");
+			}
+
+			TERM_sendVT100Code(handle,_VT100_ERASE_LINE, 0);
+			TERM_sendVT100Code(handle,_VT100_CURSOR_SET_COLUMN, 0);
+
+			ttprintf("Encoder offset = %d counts  rms error=  %d\r\n\r\n", motor_curr->FOC.enc_offset, motor_curr->position_ctrl.rms_error);
+			vTaskDelay(2000);
+		}
 
 	if(measure_linkage){
 		//Measure kV

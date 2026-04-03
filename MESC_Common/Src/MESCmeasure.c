@@ -35,6 +35,17 @@
 #include "MESCpwm.h"
 #include "MESCfluxobs.h"
 
+
+#define ALIGN_CYCLES  400 // # of times for "alignment, used in MECGet_KV
+
+static inline int16_t angle_error(int16_t a, int16_t b)
+{
+    int16_t e = a - b;
+    if (e >  32768) e -= 65536;
+    if (e < -32768) e += 65536;
+    return e;
+}
+
  void MESCmeasure_RL(MESC_motor_typedef *_motor) {
 	 switch(_motor->meas.state) {
 	 	 case MEAS_STATE_IDLE:
@@ -242,74 +253,193 @@
  }
 
 
- void MESCmeasure_GetkV(MESC_motor_typedef *_motor) {
-	_motor->meas.previous_HFI_type = _motor->HFI.Type;
-	_motor->HFI.Type=HFI_TYPE_NONE;
- 	_motor->HFI.inject = 0;
 
-   static int cycles = 0;
-   static HFI_type_e old_HFI_type;
-   if (cycles < 2) {
-   	_motor->m.flux_linkage_max = 0.1f;
-   	_motor->m.flux_linkage_min = 0.00001f;//Set really wide limits
-   	_motor->FOC.openloop_step = 0;
-   	_motor->FOC.flux_observed = _motor->m.flux_linkage_min;
-   	old_HFI_type = _motor->HFI.Type;
-   	_motor->HFI.Type = HFI_TYPE_NONE;
-       MESCpwm_phU_Enable(_motor);
-       MESCpwm_phV_Enable(_motor);
-       MESCpwm_phW_Enable(_motor);
-   }
+ //SC Added an alignment time so that the rotor can align to theputty
+  void MESCmeasure_GetkV(MESC_motor_typedef *_motor) {
 
-   MESCfluxobs_run(_motor);//We run the flux observer during this
+ 	static int count = 0;
+ 	static uint16_t temp_angle=0;
+ 	static int cycles = 0;
+ 	static HFI_type_e old_HFI_type;
 
-   static int count = 0;
-   static uint16_t temp_angle;
-   if (cycles < 60002) {
-       _motor->FOC.Idq_req.d = _motor->meas.measure_current*0.5f;  //
-       _motor->FOC.Idq_req.q = 0.0f;
-   	_motor->meas.angle_delta = temp_angle-_motor->FOC.FOCAngle;
-   	_motor->FOC.openloop_step = (uint16_t)(ERPM_MEASURE*65536.0f/(_motor->FOC.pwm_frequency*60.0f)*(float)cycles/65000.0f);
-   	_motor->FOC.FOCAngle = temp_angle;
-       OLGenerateAngle(_motor);
-       temp_angle = _motor->FOC.FOCAngle;
-       if(cycles==60001){
-       	_motor->meas.temp_flux = sqrtf(_motor->FOC.Vdq.d*_motor->FOC.Vdq.d+_motor->FOC.Vdq.q*_motor->FOC.Vdq.q)/(6.28f * (float)_motor->FOC.openloop_step * (float)_motor->FOC.pwm_frequency/65536.0f);
-       	_motor->FOC.flux_observed  = _motor->meas.temp_flux;
-       	_motor->FOC.flux_a = _motor->FOC.sincosangle.cos*_motor->FOC.flux_observed;
-       	_motor->FOC.flux_b = _motor->FOC.sincosangle.sin*_motor->FOC.flux_observed;
-       	_motor->m.flux_linkage_max = 1.7f*_motor->FOC.flux_observed;
-       	_motor->m.flux_linkage_min = 0.5f*_motor->FOC.flux_observed;
-       	_motor->meas.temp_FLA = _motor->FOC.flux_a;
-       	_motor->meas.temp_FLB = _motor->FOC.flux_b;
+
+
+ 	_motor->meas.previous_HFI_type = _motor->HFI.Type;
+ 	_motor->HFI.Type=HFI_TYPE_NONE;
+  	_motor->HFI.inject = 0;
+
+
+    if (cycles < 2) {
+ 		_motor->m.flux_linkage_max = 0.1f;
+ 		_motor->m.flux_linkage_min = 0.00001f;//Set really wide limits
+ 		_motor->FOC.openloop_step = 0;
+ 		_motor->FOC.flux_observed = _motor->m.flux_linkage_min;
+ 		old_HFI_type = _motor->HFI.Type;
+ 		_motor->HFI.Type = HFI_TYPE_NONE;
+ 		MESCpwm_phU_Enable(_motor);
+ 		MESCpwm_phV_Enable(_motor);
+ 		MESCpwm_phW_Enable(_motor);
+    }
+
+    MESCfluxobs_run(_motor);//We run the flux observer during this
+
+    /* ---------- PHASE 1 : ROTOR ALIGNMENT ---------- */
+       if (cycles < ALIGN_CYCLES) {
+
+           _motor->FOC.FOCAngle = 0;        // fixed electrical angle
+           _motor->FOC.openloop_step = 0;
+
+           _motor->FOC.Idq_req.d = _motor->meas.measure_current;
+           _motor->FOC.Idq_req.q = 0;
+
+           MESCFOC(_motor);
        }
-       MESCFOC(_motor);
-   } else if (cycles < 128000) {
-     count++;
-     _motor->FOC.Idq_req.d = 0.0f;
-     _motor->FOC.Idq_req.q = _motor->meas.measure_closedloop_current;
-     MESCFOC(_motor);
-   } else {
-      MESCpwm_generateBreak(_motor);
-      _motor->m.flux_linkage = _motor->FOC.flux_observed;
-      calculateFlux(_motor);
-     _motor->MotorState = MOTOR_STATE_TRACKING;
-     _motor->HFI.Type = old_HFI_type;
-     cycles = 0;
-     _motor->HFI.Type = _motor->meas.previous_HFI_type;
-     if (_motor->m.flux_linkage > 0.0001f && _motor->m.flux_linkage < 200.0f) {
-   	_motor->MotorSensorMode = MOTOR_SENSOR_MODE_SENSORLESS;
-     } else {
-       _motor->MotorState = MOTOR_STATE_ERROR;
-       MESCpwm_generateBreak(_motor);
+
+       /* ---------- PHASE 2 : OPEN LOOP RAMP ---------- */
+    if (cycles < ALIGN_CYCLES + 60002) {
+ 		_motor->FOC.Idq_req.d = _motor->meas.measure_current*0.5f;  //
+ 		_motor->FOC.Idq_req.q = 0.0f;
+ 		_motor->meas.angle_delta = temp_angle-_motor->FOC.FOCAngle;
+ 		_motor->FOC.openloop_step = (uint16_t)(ERPM_MEASURE*65536.0f/(_motor->FOC.pwm_frequency*60.0f)*(float)cycles/65000.0f);
+ 		_motor->FOC.FOCAngle = temp_angle;
+ 		OLGenerateAngle(_motor);
+ 		temp_angle = _motor->FOC.FOCAngle;
+ 	   if(cycles==60001){
+ 		_motor->meas.temp_flux = sqrtf(_motor->FOC.Vdq.d*_motor->FOC.Vdq.d+_motor->FOC.Vdq.q*_motor->FOC.Vdq.q)/(6.28f * (float)_motor->FOC.openloop_step * (float)_motor->FOC.pwm_frequency/65536.0f);
+ 		_motor->FOC.flux_observed  = _motor->meas.temp_flux;
+ 		_motor->FOC.flux_a = _motor->FOC.sincosangle.cos*_motor->FOC.flux_observed;
+ 		_motor->FOC.flux_b = _motor->FOC.sincosangle.sin*_motor->FOC.flux_observed;
+ 		_motor->m.flux_linkage_max = 1.7f*_motor->FOC.flux_observed;
+ 		_motor->m.flux_linkage_min = 0.5f*_motor->FOC.flux_observed;
+ 		_motor->meas.temp_FLA = _motor->FOC.flux_a;
+ 		_motor->meas.temp_FLB = _motor->FOC.flux_b;
+    }
+
+    MESCFOC(_motor);
+
+    /* ---------- PHASE 3 : CLOSED LOOP ---------- */
+    } else if (cycles < ALIGN_CYCLES + 128000) {
+ 		count++;
+ 		_motor->FOC.Idq_req.d = 0.0f;
+ 		_motor->FOC.Idq_req.q = _motor->meas.measure_closedloop_current;
+ 		MESCFOC(_motor);
+ 	}
+    else {
+ 		MESCpwm_generateBreak(_motor);
+ 		// Do not save, just display
+ 		//_motor->m.flux_linkage = _motor->FOC.flux_observed;
+ 		calculateFlux(_motor);
+ 		_motor->MotorState = MOTOR_STATE_TRACKING;
+ 		_motor->HFI.Type = old_HFI_type;
+ 		cycles = 0;
+ 		temp_angle=0;
+
+ 		_motor->HFI.Type = _motor->meas.previous_HFI_type;
+ 		if (_motor->m.flux_linkage > 0.0001f && _motor->m.flux_linkage < 200.0f)
+ 			_motor->MotorSensorMode = MOTOR_SENSOR_MODE_SENSORLESS;
+ 		else {
+ 			_motor->MotorState = MOTOR_STATE_ERROR;
+ 			MESCpwm_generateBreak(_motor);
+ 		}
+
+    }
+ //    writePWM(_motor);
+
+    cycles++;
+
+  }
+
+
+  void MESCmeasure_EncoderCal(MESC_motor_typedef *_motor) {
+
+  	static int count = 0;
+  	static uint16_t temp_angle=0;
+  	static int cycles = 0;
+  	static int16_t diff=0;
+  	static uint32_t sum=0; 	//running sum
+  	static HFI_type_e old_HFI_type;
+    static uint64_t sum_sq=0;
+
+
+  	_motor->meas.previous_HFI_type = _motor->HFI.Type;
+  	_motor->HFI.Type=HFI_TYPE_NONE;
+   	_motor->HFI.inject = 0;
+
+
+     if (cycles < 2) {
+  		_motor->m.flux_linkage_max = 0.1f;
+  		_motor->m.flux_linkage_min = 0.00001f;//Set really wide limits
+  		_motor->FOC.openloop_step = 0;
+  		_motor->FOC.flux_observed = _motor->m.flux_linkage_min;
+  		old_HFI_type = _motor->HFI.Type;
+  		_motor->HFI.Type = HFI_TYPE_NONE;
+  		MESCpwm_phU_Enable(_motor);
+  		MESCpwm_phV_Enable(_motor);
+  		MESCpwm_phW_Enable(_motor);
      }
+
+     MESCfluxobs_run(_motor);//We run the flux observer during this
+
+     /* ---------- PHASE 1 : ROTOR ALIGNMENT ---------- */
+        if (cycles < ALIGN_CYCLES) {
+
+            _motor->FOC.FOCAngle = 0;        // fixed electrical angle
+            _motor->FOC.openloop_step = 0;
+
+            _motor->FOC.Idq_req.d = _motor->meas.measure_current;
+            _motor->FOC.Idq_req.q = 0;
+
+            MESCFOC(_motor);
+        }
+
+        /* ---------- PHASE 2 : OPEN LOOP RAMP ---------- */
+     if (cycles < ALIGN_CYCLES + 60002) {
+  		_motor->FOC.Idq_req.d = _motor->meas.measure_current*0.5f;  //
+  		_motor->FOC.Idq_req.q = 0.0f;
+  		_motor->meas.angle_delta = temp_angle-_motor->FOC.FOCAngle;
+  		_motor->FOC.openloop_step = (uint16_t)(ERPM_MEASURE*65536.0f/(_motor->FOC.pwm_frequency*60.0f)*(float)cycles/65000.0f);
+  		_motor->FOC.FOCAngle = temp_angle;
+  		OLGenerateAngle(_motor);
+  		temp_angle = _motor->FOC.FOCAngle;
+  		diff= _motor->FOC.FOCAngle- _motor->pos.tle5012_pos;
+  		sum += diff;  // accumulate
+
+  		sum_sq += (uint64_t)diff * (uint64_t)diff;
+
+
+  		MESCFOC(_motor);
+
+     /* ---------- PHASE 3 : CLOSED LOOP ---------- */
+     }
+
+     else {
+  		MESCpwm_generateBreak(_motor);
+  		// Do not save, just display
+  		//_motor->m.flux_linkage = _motor->FOC.flux_observed;
+
+  		float rms_error = sqrtf((float)sum_sq / cycles);
+
+  		_motor->FOC.enc_offset=  (uint16_t) sum/cycles;
+  		_motor->position_ctrl.rms_error=(uint16_t)rms_error;
+  		calculateFlux(_motor);
+  		_motor->MotorState = MOTOR_STATE_TRACKING;
+  		_motor->HFI.Type = old_HFI_type;
+  		cycles = 0;
+  		temp_angle=0;
+  		rms_error=0;
+  		sum_sq=0;
+  		sum=0;
+  		diff=0;
+
+  		_motor->HFI.Type = _motor->meas.previous_HFI_type;
+
+
+     }
+  //    writePWM(_motor);
+
+     cycles++;
+
    }
-//    writePWM(_motor);
-
-   cycles++;
-
- }
-
 float MESCmeasure_DetectHFI(MESC_motor_typedef *_motor){
 
  	static float dinductance, qinductance;

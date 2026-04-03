@@ -84,6 +84,8 @@ typedef enum {
   /*We are going to run, but using a BLDC controller, not FOC
    */
 
+  MOTOR_STATE_ENCODER_CAL = 15
+  /* Perform encoder offset measurement */
 } motor_state_e;
 
 extern motor_state_e MotorState;

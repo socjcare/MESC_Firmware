@@ -42,5 +42,6 @@ float MESCmeasure_DetectHFI(MESC_motor_typedef *_motor);
 void MESCmeasure_GetDeadtime(MESC_motor_typedef *_motor);
 void MESCmeasure_GetHallTable(MESC_motor_typedef *_motor);
 void MESCmeasure_DoublePulseTest(MESC_motor_typedef *_motor);
+void MESCmeasure_EncoderCal(MESC_motor_typedef *_motor);
 
 #endif /* INC_MESCMEASURE_H_ */
